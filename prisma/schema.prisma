@@ -1,0 +1,578 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  MEMBER
+  ADMIN
+  MODERATOR
+  CLUB_MANAGER
+}
+
+enum ClubCategory {
+  TECH
+  BUSINESS
+  CREATIVE
+  HEALTH
+  LEADERSHIP
+  EDUCATION
+  OTHER
+}
+
+enum EventType {
+  WORKSHOP
+  MEETUP
+  CONFERENCE
+  WEBINAR
+  CHALLENGE
+  OTHER
+}
+
+enum EventStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum MentorshipStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  PAUSED
+}
+
+enum MentorshipType {
+  ONE_ON_ONE
+  GROUP
+  CLUB_BASED
+}
+
+enum MentorshipStyle {
+  LIVE_SESSIONS
+  ASYNCHRONOUS
+  HYBRID
+}
+
+enum MentorshipTheme {
+  TECH
+  BUSINESS
+  CAREER
+  CREATIVE
+  HEALTH
+  LEADERSHIP
+  EDUCATION
+  OTHER
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum EvaluationType {
+  MID_PROGRAM
+  FINAL
+}
+
+enum MatchStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  AUTO_MATCHED
+}
+
+enum BadgeType {
+  PARTICIPATION
+  LEARNING
+  MENTORSHIP
+  LEADERSHIP
+  ACHIEVEMENT
+}
+
+enum NotificationType {
+  EVENT_REMINDER
+  MENTORSHIP_REQUEST
+  BADGE_EARNED
+  CLUB_UPDATE
+  SYSTEM_ANNOUNCEMENT
+  FOLLOW
+  OTHER
+}
+
+enum ActivityType {
+  EVENT_CREATED
+  EVENT_RSVP
+  CLUB_JOINED
+  CLUB_CREATED
+  BADGE_EARNED
+  MENTORSHIP_STARTED
+  MENTORSHIP_COMPLETED
+  POST_CREATED
+  COMMENT_ADDED
+}
+
+model User {
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  phone                 String?   @unique
+  password              String
+  firstName             String
+  lastName              String
+  bio                   String?
+  profileImage          String?
+  location              String?
+  skills                String[]
+  interests             String[]
+  education             String?
+  occupation            String?
+  role                  UserRole  @default(MEMBER)
+  isActive              Boolean   @default(true)
+  isEmailVerified       Boolean   @default(false)
+  emailVerificationToken String?
+  resetPasswordToken    String?
+  resetPasswordExpires  DateTime?
+  points                Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  clubs                 Club[]    @relation("UserClubs")
+  managedClubs          ClubManager[]
+  organizedEvents       Event[]
+  attendedEvents        Event[]   @relation("EventAttendees")
+  mentorSessions        Mentorship[] @relation("MentorSessions")
+  menteeSessions        Mentorship[] @relation("MenteeSessions")
+  userBadges            UserBadge[] @relation("UserBadges")
+  notifications         Notification[]
+  sentMessages          Message[] @relation("SenderMessages")
+  receivedMessages      Message[] @relation("ReceiverMessages")
+  mentorProfile         MentorProfile?
+  menteeProfile         MenteeProfile?
+  mentorMatches         MentorshipMatch[] @relation("MentorMatches")
+  menteeMatches         MentorshipMatch[] @relation("MenteeMatches")
+  following             Follow[]          @relation("UserFollowing")
+  followers             Follow[]          @relation("UserFollowers")
+  activities            Activity[]
+
+  @@map("users")
+}
+
+model Club {
+  id          String        @id @default(uuid())
+  name        String
+  description String?
+  image       String?
+  category    ClubCategory  @default(OTHER)
+  isActive    Boolean       @default(true)
+  isPublic    Boolean       @default(false)
+  createdBy   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  members     User[]        @relation("UserClubs")
+  managers    ClubManager[]
+  events      Event[]
+
+  @@map("clubs")
+}
+
+model ClubManager {
+  id          String   @id @default(uuid())
+  userId      String
+  clubId      String
+  assignedBy  String   // Admin/Moderator who assigned this manager
+  assignedAt  DateTime @default(now())
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club        Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clubId])
+  @@map("club_managers")
+}
+
+model Event {
+  id           String      @id @default(uuid())
+  title        String
+  description  String?     @db.Text
+  image        String?
+  type         EventType   @default(OTHER)
+  status       EventStatus @default(UPCOMING)
+  startDate    DateTime
+  endDate      DateTime?
+  location     String?
+  isOnline     Boolean     @default(false)
+  onlineLink   String?
+  maxAttendees Int         @default(0)
+  organizerId  String
+  clubId       String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relations
+  organizer    User        @relation(fields: [organizerId], references: [id])
+  club         Club?       @relation(fields: [clubId], references: [id])
+  attendees    User[]      @relation("EventAttendees")
+
+  @@map("events")
+}
+
+model MentorProfile {
+  id                    String            @id @default(uuid())
+  userId                String            @unique
+  company               String?
+  yearsOfExperience     Int?
+  linkedIn              String?
+  mentorshipThemes      MentorshipTheme[]
+  mentorshipStyle       MentorshipStyle[]
+  weeklyAvailability    Int?             // hours per week
+  maxMentees            Int               @default(3)
+  preferredType         MentorshipType    @default(ONE_ON_ONE)
+  bio                   String?           @db.Text
+  isVerified            Boolean           @default(false)
+  verificationNotes     String?           @db.Text
+  isActive              Boolean           @default(true)
+  currentMentees        Int               @default(0)
+  totalMentees          Int               @default(0)
+  rating                Float?            @default(0)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mentor_profiles")
+}
+
+model MenteeProfile {
+  id                    String            @id @default(uuid())
+  userId                String            @unique
+  age                   Int?
+  fieldOfInterest       String?
+  experienceLevel       String?           // Beginner, Intermediate, Advanced
+  careerGoals           String?           @db.Text
+  challenges            String?           @db.Text
+  learningPreference    String[]          // video, chat, tasks
+  availability          Json?             // { days: [], timeBlocks: [] }
+  commitmentAgreed      Boolean           @default(false)
+  isActive              Boolean           @default(true)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mentee_profiles")
+}
+
+model MentorshipCycle {
+  id                    String            @id @default(uuid())
+  name                  String
+  description           String?           @db.Text
+  startDate             DateTime
+  endDate               DateTime
+  status                String             @default("UPCOMING") // UPCOMING, ACTIVE, COMPLETED
+  maxMentorships        Int?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  programs              MentorshipProgram[]
+  mentorships           Mentorship[]       @relation("CycleMentorships")
+  matches               MentorshipMatch[]
+
+  @@map("mentorship_cycles")
+}
+
+model MentorshipProgram {
+  id                    String            @id @default(uuid())
+  mentorshipId          String
+  cycleId               String
+  week                  Int               // 1-8
+  status                String            @default("ACTIVE") // ACTIVE, COMPLETED, DROPPED
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  mentorship            Mentorship        @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+  cycle                 MentorshipCycle   @relation(fields: [cycleId], references: [id])
+  tasks                 MentorshipTask[]
+  progress              MentorshipProgress[]
+  evaluations           MentorshipEvaluation[]
+
+  @@unique([mentorshipId, cycleId])
+  @@map("mentorship_programs")
+}
+
+model MentorshipMatch {
+  id                    String            @id @default(uuid())
+  mentorId              String
+  menteeId              String
+  cycleId               String?
+  matchScore            Float             // 0-100
+  skillMatch            Float             // 0-40
+  industryRelevance     Float             // 0-20
+  availabilityMatch     Float             // 0-20
+  communicationMatch    Float             // 0-10
+  personalityFit        Float             // 0-10
+  status                MatchStatus       @default(PENDING)
+  mentorApproved        Boolean           @default(false)
+  menteeApproved        Boolean           @default(false)
+  matchedAt             DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  mentor                User              @relation("MentorMatches", fields: [mentorId], references: [id])
+  mentee                User              @relation("MenteeMatches", fields: [menteeId], references: [id])
+  cycle                 MentorshipCycle?  @relation(fields: [cycleId], references: [id])
+  mentorship            Mentorship?
+
+  @@unique([mentorId, menteeId, cycleId])
+  @@map("mentorship_matches")
+}
+
+model Mentorship {
+  id                String            @id @default(uuid())
+  mentorId          String
+  menteeId          String
+  cycleId           String?
+  matchId           String?           @unique
+  status            MentorshipStatus @default(PENDING)
+  type              MentorshipType   @default(ONE_ON_ONE)
+  goals             String?           @db.Text
+  notes             String?           @db.Text
+  nextSessionDate   DateTime?
+  sessionsCompleted Int               @default(0)
+  engagementScore   Float?            // 0-100
+  satisfactionScore Float?            // 0-100
+  startedAt         DateTime?
+  completedAt       DateTime?
+  certificateId     String?           @unique
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  mentor            User              @relation("MentorSessions", fields: [mentorId], references: [id])
+  mentee            User              @relation("MenteeSessions", fields: [menteeId], references: [id])
+  cycle             MentorshipCycle?  @relation("CycleMentorships", fields: [cycleId], references: [id])
+  match             MentorshipMatch?  @relation(fields: [matchId], references: [id])
+  programs          MentorshipProgram[]
+  tasks             MentorshipTask[]
+  progress          MentorshipProgress[]
+  evaluations       MentorshipEvaluation[]
+  certificate       Certificate?
+
+  @@unique([mentorId, menteeId, cycleId])
+  @@map("mentorships")
+}
+
+model MentorshipTask {
+  id                    String            @id @default(uuid())
+  mentorshipId          String
+  programId             String?
+  title                 String
+  description           String?           @db.Text
+  week                  Int
+  type                  String            // learning, practice, reflection
+  status                TaskStatus         @default(PENDING)
+  dueDate               DateTime?
+  completedAt           DateTime?
+  mentorFeedback        String?           @db.Text
+  aiGenerated           Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  mentorship            Mentorship        @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+  program               MentorshipProgram? @relation(fields: [programId], references: [id])
+
+  @@map("mentorship_tasks")
+}
+
+model MentorshipProgress {
+  id                    String            @id @default(uuid())
+  mentorshipId          String
+  programId             String?
+  week                  Int
+  tasksCompleted        Int               @default(0)
+  totalTasks            Int               @default(0)
+  engagementScore       Float?            // 0-100
+  skillImprovement      Float?            // 0-100
+  notes                 String?           @db.Text
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  mentorship            Mentorship        @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+  program               MentorshipProgram? @relation(fields: [programId], references: [id])
+
+  @@unique([mentorshipId, week])
+  @@map("mentorship_progress")
+}
+
+model MentorshipEvaluation {
+  id                    String            @id @default(uuid())
+  mentorshipId          String
+  programId             String?
+  type                  EvaluationType
+  evaluatorId           String            // mentor or mentee
+  isMentor              Boolean
+  engagementRating      Int?              // 1-5
+  progressRating        Int?              // 1-5
+  satisfactionRating    Int?              // 1-5
+  skillImprovement      Int?              // 1-5
+  feedback              String?           @db.Text
+  challenges            String?           @db.Text
+  recommendations       String?           @db.Text
+  submittedAt           DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  mentorship            Mentorship        @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+  program               MentorshipProgram? @relation(fields: [programId], references: [id])
+
+  @@unique([mentorshipId, type, evaluatorId])
+  @@map("mentorship_evaluations")
+}
+
+model Certificate {
+  id                    String            @id @default(uuid())
+  mentorshipId         String            @unique
+  certificateNumber     String            @unique
+  issuedAt              DateTime          @default(now())
+  pdfUrl                String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  // Relations
+  mentorship            Mentorship        @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+model Badge {
+  id          String     @id @default(uuid())
+  name        String
+  description String?
+  icon        String?
+  image       String?
+  type        BadgeType  @default(ACHIEVEMENT)
+  points      Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  userBadges  UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String
+  badgeId   String
+  earnedAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation("UserBadges", fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+model Notification {
+  id            String           @id @default(uuid())
+  userId        String
+  title         String
+  message       String           @db.Text
+  type          NotificationType @default(OTHER)
+  isRead        Boolean          @default(false)
+  link          String?
+  eventId       String?
+  clubId        String?
+  mentorshipId String?
+  badgeId       String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  // Relations
+  user          User             @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  senderId    String
+  receiverId String
+  content     String   @db.Text
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  sender      User     @relation("SenderMessages", fields: [senderId], references: [id])
+  receiver    User     @relation("ReceiverMessages", fields: [receiverId], references: [id])
+
+  @@map("messages")
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String   // User who is following
+  followingId String   // User being followed
+  createdAt   DateTime @default(now())
+
+  // Relations
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model Activity {
+  id            String       @id @default(uuid())
+  userId        String
+  type          ActivityType
+  title         String
+  description   String?      @db.Text
+  link          String?      // Link to related resource
+  eventId       String?
+  clubId        String?
+  badgeId       String?
+  mentorshipId String?
+  metadata      Json?        // Additional data
+  createdAt     DateTime     @default(now())
+
+  // Relations
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([type])
+  @@map("activities")
+}
+

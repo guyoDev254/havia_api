@@ -1,0 +1,46 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { ClubsModule } from './clubs/clubs.module';
+import { EventsModule } from './events/events.module';
+import { MentorshipModule } from './mentorship/mentorship.module';
+import { BadgesModule } from './badges/badges.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ChatModule } from './chat/chat.module';
+import { AdminModule } from './admin/admin.module';
+import { ExploreModule } from './explore/explore.module';
+import { ActivityModule } from './activity/activity.module';
+import { HealthModule } from './health/health.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+    PrismaModule,
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
+    AuthModule,
+    UsersModule,
+    ClubsModule,
+    EventsModule,
+    MentorshipModule,
+    BadgesModule,
+    NotificationsModule,
+    ChatModule,
+    AdminModule,
+    ExploreModule,
+    ActivityModule,
+    HealthModule,
+  ],
+})
+export class AppModule {}
+
