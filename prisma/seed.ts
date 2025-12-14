@@ -3,6 +3,21 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Helper function to process promises in batches to reduce memory usage
+async function processInBatches<T>(
+  items: T[],
+  batchSize: number,
+  processor: (item: T) => Promise<any>
+): Promise<any[]> {
+  const results: any[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(processor));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 async function main() {
   console.log('🌱 Starting seed...');
 
