@@ -7,7 +7,7 @@ services:
     container_name: havia-api
     restart: unless-stopped
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-1111}:1111"
     env_file:
       - .env
     environment:
@@ -16,7 +16,7 @@ services:
       
       # Application
       NODE_ENV: ${NODE_ENV:-production}
-      PORT: 8000
+      PORT: 1111
       
       # JWT
       JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
@@ -26,7 +26,7 @@ services:
       
       # File Uploads
       UPLOAD_PATH: /app/uploads
-      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      BASE_URL: ${BASE_URL:-http://localhost:1111}
       API_HOST: ${API_HOST:-http://localhost}
       
       # CORS

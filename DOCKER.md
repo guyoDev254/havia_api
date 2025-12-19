@@ -84,7 +84,7 @@ yarn start:dev
    ```bash
    docker run -d \
      --name havia-api \
-     -p 8000:8000 \
+     -p 1111:1111 \
      --env-file .env \
      -v uploads_data:/app/uploads \
      --link havia-postgres:postgres \
@@ -101,7 +101,7 @@ See `.env.example` for all available environment variables.
 - `MESSAGE_ENCRYPTION_KEY` - Key for message encryption
 
 ### Optional Variables:
-- `PORT` - API port (default: 8000)
+- `PORT` - API port (default: 1111)
 - `NODE_ENV` - Environment (development/production)
 - `SMTP_*` - Email configuration
 - `CORS_ORIGIN` - Allowed CORS origins
@@ -156,7 +156,7 @@ If the API can't connect to your database:
 
 ### Port Already in Use
 
-If port 8000 is already in use:
+If port 1111 is already in use:
 1. Change `PORT` in `.env` file
 2. Update port mapping in `docker-compose.yml`
 
