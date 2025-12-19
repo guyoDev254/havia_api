@@ -1,9 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { EncryptionService } from '../common/services/encryption.service';
 
 @Injectable()
 export class ChatService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+    private encryptionService: EncryptionService,
+  ) {}
 
   async getConversations(userId: string) {
     const messages = await this.prisma.message.findMany({
@@ -43,9 +49,14 @@ export class ChatService {
       const partner = message.senderId === userId ? message.receiver : message.sender;
 
       if (!conversations.has(partnerId)) {
+        // Decrypt last message content for preview
+        const decryptedMessage = {
+          ...message,
+          content: this.encryptionService.decrypt(message.content),
+        };
         conversations.set(partnerId, {
           partner,
-          lastMessage: message,
+          lastMessage: decryptedMessage,
           unreadCount: 0,
         });
       }
@@ -60,7 +71,7 @@ export class ChatService {
   }
 
   async getMessages(userId: string, otherUserId: string) {
-    return this.prisma.message.findMany({
+    const messages = await this.prisma.message.findMany({
       where: {
         OR: [
           { senderId: userId, receiverId: otherUserId },
@@ -89,6 +100,12 @@ export class ChatService {
         createdAt: 'asc',
       },
     });
+
+    // Decrypt message content
+    return messages.map((message) => ({
+      ...message,
+      content: this.encryptionService.decrypt(message.content),
+    }));
   }
 
   async sendMessage(senderId: string, receiverId: string, content: string) {
@@ -114,11 +131,14 @@ export class ChatService {
       },
     });
 
+    // Encrypt message content before storing
+    const encryptedContent = this.encryptionService.encrypt(content);
+
     const message = await this.prisma.message.create({
       data: {
         senderId,
         receiverId,
-        content,
+        content: encryptedContent, // Store encrypted content
       },
       include: {
         sender: {
@@ -140,18 +160,19 @@ export class ChatService {
       },
     });
 
-    // Create notification for the receiver
-    await this.prisma.notification.create({
-      data: {
-        userId: receiverId,
-        title: 'New Message',
-        message: `${sender?.firstName} ${sender?.lastName} sent you a message`,
-        type: 'OTHER',
-        link: `/chat/${senderId}`,
-      },
+    // Create notification and send push notification for the receiver
+    await this.notificationsService.createAndSend(receiverId, {
+      title: 'New Message',
+      message: `${sender?.firstName} ${sender?.lastName} sent you a message`,
+      type: 'OTHER',
+      link: `/chat/${senderId}`,
     });
 
-    return message;
+    // Return message with decrypted content for the response
+    return {
+      ...message,
+      content, // Return decrypted content to the sender
+    };
   }
 
   async markAsRead(userId: string, messageId: string) {

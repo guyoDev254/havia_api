@@ -13,6 +13,7 @@ import {
   TaskStatus,
   EvaluationType,
   MatchStatus,
+  SessionStatus,
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateMentorProfileDto } from './dto/create-mentor-profile.dto';
@@ -25,6 +26,85 @@ export class MentorshipService {
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
   ) {}
+
+  private async getDefaultCycleId(): Promise<string | null> {
+    // Prefer ACTIVE cycle, otherwise the nearest UPCOMING cycle.
+    const active = await this.prisma.mentorshipCycle.findFirst({
+      where: { status: 'ACTIVE' as any },
+      orderBy: { startDate: 'desc' },
+      select: { id: true },
+    });
+    if (active?.id) return active.id;
+
+    const upcoming = await this.prisma.mentorshipCycle.findFirst({
+      where: { status: 'UPCOMING' as any },
+      orderBy: { startDate: 'asc' },
+      select: { id: true },
+    });
+    return upcoming?.id ?? null;
+  }
+
+  // ==================== CYCLE INTEREST (ENROLL/INQUIRE) ====================
+
+  async getMyCycleInterest(userId: string, cycleId: string) {
+    const record = await this.prisma.mentorshipCycleInterest.findUnique({
+      where: { cycleId_userId: { cycleId, userId } },
+      select: { status: true, role: true, createdAt: true, updatedAt: true },
+    });
+    return record ?? { status: 'NONE' };
+  }
+
+  async setCycleInterest(userId: string, cycleId: string, interested: boolean) {
+    const cycle = await this.prisma.mentorshipCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new NotFoundException('Cycle not found');
+
+    const [mentorProfile, menteeProfile, user] = await Promise.all([
+      this.prisma.mentorProfile.findUnique({ where: { userId }, select: { userId: true } }),
+      this.prisma.menteeProfile.findUnique({ where: { userId }, select: { userId: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } }),
+    ]);
+
+    // Default to MENTEE for uncategorized users so admin can still see them in the mentee pool.
+    // Mentor role is only set if a verified mentor profile exists (or role explicitly says MENTOR).
+    const role =
+      mentorProfile || user?.role === 'MENTOR'
+        ? 'MENTOR'
+        : menteeProfile || user?.role === 'MENTEE'
+        ? 'MENTEE'
+        : 'MENTEE';
+
+    const status = interested ? 'INTERESTED' : 'WITHDRAWN';
+
+    const record = await this.prisma.mentorshipCycleInterest.upsert({
+      where: { cycleId_userId: { cycleId, userId } },
+      create: { cycleId, userId, role, status },
+      update: { role, status },
+    });
+
+    // Notify mentorship admins (and super admin) when someone expresses interest.
+    if (interested) {
+      const admins = await this.prisma.user.findMany({
+        where: {
+          isActive: true,
+          role: { in: ['SUPER_ADMIN', 'MENTORSHIP_ADMIN', 'PLATFORM_ADMIN', 'ADMIN'] as any },
+        },
+        select: { id: true },
+      });
+
+      await Promise.all(
+        admins.map((a) =>
+          this.notificationsService.createAndSend(a.id, {
+            title: 'New mentorship cycle interest',
+            message: `A ${role ?? 'user'} showed interest in "${cycle.name}".`,
+            type: 'SYSTEM_ANNOUNCEMENT' as any,
+            link: `/mentorships/cycles/${cycleId}`,
+          }),
+        ),
+      );
+    }
+
+    return record;
+  }
 
   // ==================== MENTOR PROFILE MANAGEMENT ====================
 
@@ -42,6 +122,9 @@ export class MentorshipService {
       data: {
         userId,
         ...dto,
+        // MVP: make mentors immediately discoverable in mobile "Find a Mentor".
+        // (Admin can still unverify/unlist later if needed.)
+        isVerified: true,
       },
       include: {
         user: {
@@ -185,6 +268,11 @@ export class MentorshipService {
       data: {
         name: dto.name,
         description: dto.description,
+        benefits: dto.benefits,
+        expectedOutcomes: dto.expectedOutcomes,
+        requirements: dto.requirements,
+        targetGroup: dto.targetGroup,
+        conditions: dto.conditions,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         maxMentorships: dto.maxMentorships,
@@ -230,7 +318,66 @@ export class MentorshipService {
                 },
               },
             },
+            tasks: true,
+            progress: true,
           },
+        },
+        mentorships: {
+          include: {
+            mentor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            mentee: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        matches: {
+          include: {
+            mentor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            mentee: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        interests: {
+          where: { status: 'INTERESTED' },
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
         },
         _count: {
           select: {
@@ -246,6 +393,123 @@ export class MentorshipService {
     }
 
     return cycle;
+  }
+
+  // ==================== MANUAL ADMIN ASSIGNMENT ====================
+
+  async manualAssignMentorship(cycleId: string, mentorId: string, menteeId: string) {
+    if (mentorId === menteeId) {
+      throw new BadRequestException('Mentor and mentee cannot be the same user');
+    }
+
+    const cycle = await this.prisma.mentorshipCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new NotFoundException('Cycle not found');
+
+    const [mentorProfile, menteeProfile] = await Promise.all([
+      this.prisma.mentorProfile.findUnique({
+        where: { userId: mentorId },
+        select: { isActive: true, isVerified: true, currentMentees: true, maxMentees: true },
+      }),
+      this.prisma.menteeProfile.findUnique({
+        where: { userId: menteeId },
+        select: { isActive: true },
+      }),
+    ]);
+
+    if (!mentorProfile || !mentorProfile.isActive || !mentorProfile.isVerified) {
+      throw new BadRequestException('Selected mentor must have an active, verified mentor profile');
+    }
+    if (!menteeProfile || !menteeProfile.isActive) {
+      throw new BadRequestException('Selected mentee must have an active mentee profile');
+    }
+    if (mentorProfile.currentMentees >= mentorProfile.maxMentees) {
+      throw new BadRequestException('Mentor has reached maximum mentees');
+    }
+
+    const existing = await this.prisma.mentorship.findFirst({
+      where: {
+        cycleId,
+        mentorId,
+        menteeId,
+        status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
+      },
+    });
+    if (existing) {
+      throw new BadRequestException('An active/pending mentorship already exists for this pair in this cycle');
+    }
+
+    // Create (or reuse) a match record as an audit trail for manual assignment.
+    const match = await this.prisma.mentorshipMatch.upsert({
+      where: {
+        mentorId_menteeId_cycleId: {
+          mentorId,
+          menteeId,
+          cycleId,
+        },
+      },
+      create: {
+        mentorId,
+        menteeId,
+        cycleId,
+        matchScore: 100,
+        skillMatch: 40,
+        industryRelevance: 20,
+        availabilityMatch: 20,
+        communicationMatch: 10,
+        personalityFit: 10,
+        status: MatchStatus.APPROVED,
+        mentorApproved: true,
+        menteeApproved: true,
+        matchedAt: new Date(),
+      },
+      update: {
+        status: MatchStatus.APPROVED,
+        mentorApproved: true,
+        menteeApproved: true,
+        matchedAt: new Date(),
+      },
+    });
+
+    const mentorship = await this.prisma.mentorship.create({
+      data: {
+        mentorId,
+        menteeId,
+        cycleId,
+        matchId: match.id,
+        status: MentorshipStatus.ACTIVE,
+        startedAt: new Date(),
+      },
+      include: {
+        mentor: { select: { id: true, firstName: true, lastName: true } },
+        mentee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    await this.prisma.mentorProfile.update({
+      where: { userId: mentorId },
+      data: { currentMentees: { increment: 1 }, totalMentees: { increment: 1 } },
+    });
+
+    await this.createProgram(mentorship.id, cycleId);
+
+    await Promise.all([
+      this.notificationsService.createAndSend(mentorId, {
+        title: 'New mentorship assigned',
+        message: `You have been assigned a new mentee: ${mentorship.mentee.firstName} ${mentorship.mentee.lastName}.`,
+        type: 'MENTORSHIP_REQUEST' as any,
+        link: `/mentorship/program/${mentorship.id}`,
+        mentorshipId: mentorship.id,
+      }),
+      this.notificationsService.createAndSend(menteeId, {
+        title: 'Your mentor has been assigned',
+        message: `You have been assigned a mentor: ${mentorship.mentor.firstName} ${mentorship.mentor.lastName}.`,
+        type: 'MENTORSHIP_REQUEST' as any,
+        link: `/mentorship/program/${mentorship.id}`,
+        mentorshipId: mentorship.id,
+      }),
+    ]);
+
+    return mentorship;
   }
 
   // ==================== MATCHING ALGORITHM ====================
@@ -625,6 +889,98 @@ export class MentorshipService {
 
   // ==================== TASK MANAGEMENT ====================
 
+  async createTask(
+    mentorUserId: string,
+    data: {
+      mentorshipId: string;
+      programId?: string;
+      week: number;
+      title: string;
+      description?: string;
+      type?: string;
+      dueDate?: string;
+    },
+  ) {
+    // Verify the user is the mentor for this mentorship
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: data.mentorshipId },
+      select: { mentorId: true, status: true },
+    });
+
+    if (!mentorship) {
+      throw new NotFoundException('Mentorship not found');
+    }
+
+    if (mentorship.mentorId !== mentorUserId) {
+      throw new ForbiddenException('Only the mentor can create tasks');
+    }
+
+    if (mentorship.status !== 'ACTIVE') {
+      throw new BadRequestException('Can only create tasks for active mentorships');
+    }
+
+    const task = await this.prisma.mentorshipTask.create({
+      data: {
+        mentorshipId: data.mentorshipId,
+        programId: data.programId,
+        week: data.week,
+        title: data.title,
+        description: data.description,
+        type: (data.type as any) || 'CUSTOM',
+        status: TaskStatus.PENDING,
+        dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        aiGenerated: false,
+      },
+    });
+
+    // Update progress
+    const [totalTasks, completedTasks] = await Promise.all([
+      this.prisma.mentorshipTask.count({
+        where: { mentorshipId: data.mentorshipId, week: data.week },
+      }),
+      this.prisma.mentorshipTask.count({
+        where: { mentorshipId: data.mentorshipId, week: data.week, status: TaskStatus.COMPLETED },
+      }),
+    ]);
+
+    await this.prisma.mentorshipProgress.upsert({
+      where: {
+        mentorshipId_week: {
+          mentorshipId: data.mentorshipId,
+          week: data.week,
+        },
+      },
+      create: {
+        mentorshipId: data.mentorshipId,
+        programId: data.programId ?? undefined,
+        week: data.week,
+        tasksCompleted: completedTasks,
+        totalTasks,
+      },
+      update: {
+        totalTasks,
+        tasksCompleted: completedTasks,
+      },
+    });
+
+    // Notify mentee
+    const mentorshipWithMentee = await this.prisma.mentorship.findUnique({
+      where: { id: data.mentorshipId },
+      include: { mentee: true },
+    });
+
+    if (mentorshipWithMentee) {
+      await this.notificationsService.create(mentorshipWithMentee.menteeId, {
+        title: 'New Task Assigned',
+        message: `Your mentor assigned a new task: ${data.title}`,
+        type: 'MENTORSHIP_REQUEST' as any,
+        mentorshipId: data.mentorshipId,
+      });
+    }
+
+    return task;
+  }
+
   async generateTasks(mentorshipId: string, programId: string, week: number) {
     const mentorship = await this.prisma.mentorship.findUnique({
       where: { id: mentorshipId },
@@ -695,17 +1051,382 @@ export class MentorshipService {
 
   async updateTaskStatus(
     taskId: string,
+    actorUserId: string,
     status: TaskStatus,
     mentorFeedback?: string,
   ) {
-    return this.prisma.mentorshipTask.update({
+    // Get the task with mentorship info to check permissions
+    const task = await this.prisma.mentorshipTask.findUnique({
+      where: { id: taskId },
+      include: {
+        mentorship: {
+          select: {
+            id: true,
+            mentorId: true,
+            menteeId: true,
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    const isMentor = task.mentorship.mentorId === actorUserId;
+    const isMentee = task.mentorship.menteeId === actorUserId;
+
+    if (!isMentor && !isMentee) {
+      throw new ForbiddenException('You are not authorized to update this task');
+    }
+
+    // Permission logic:
+    // - Mentee can mark tasks as IN_PROGRESS or COMPLETED
+    // - Mentor can provide feedback on completed tasks (but status should already be COMPLETED)
+    // - Mentor can also mark tasks as COMPLETED (to acknowledge completion)
+    // - Mentor can mark tasks as SKIPPED if needed
+
+    if (isMentee) {
+      // Mentee can mark as IN_PROGRESS or COMPLETED
+      if (status !== TaskStatus.IN_PROGRESS && status !== TaskStatus.COMPLETED) {
+        throw new ForbiddenException('Mentees can only mark tasks as IN_PROGRESS or COMPLETED');
+      }
+    }
+
+    // If mentor is providing feedback, task should be completed by mentee first
+    if (isMentor && mentorFeedback && task.status !== TaskStatus.COMPLETED) {
+      // Mentor can still mark as completed if mentee hasn't
+      // This allows mentor to acknowledge completion directly
+    }
+
+    const updated = await this.prisma.mentorshipTask.update({
       where: { id: taskId },
       data: {
         status,
         completedAt: status === TaskStatus.COMPLETED ? new Date() : null,
-        mentorFeedback,
+        mentorFeedback: isMentor ? mentorFeedback : undefined, // Only mentor can set feedback
       },
     });
+
+    // Keep weekly progress in sync so UI can show real-time progress without manual updates.
+    // Progress is stored per mentorship + week (unique), and optionally linked to the programId.
+    try {
+      const [totalTasks, completedTasks] = await Promise.all([
+        this.prisma.mentorshipTask.count({
+          where: { mentorshipId: updated.mentorshipId, week: updated.week },
+        }),
+        this.prisma.mentorshipTask.count({
+          where: { mentorshipId: updated.mentorshipId, week: updated.week, status: TaskStatus.COMPLETED },
+        }),
+      ]);
+
+      await this.prisma.mentorshipProgress.upsert({
+        where: {
+          mentorshipId_week: {
+            mentorshipId: updated.mentorshipId,
+            week: updated.week,
+          },
+        },
+        create: {
+          mentorshipId: updated.mentorshipId,
+          programId: updated.programId ?? undefined,
+          week: updated.week,
+          tasksCompleted: completedTasks,
+          totalTasks,
+        },
+        update: {
+          tasksCompleted: completedTasks,
+          totalTasks,
+          programId: updated.programId ?? undefined,
+        },
+      });
+
+      // If a week is fully completed, advance the program week and generate next week's tasks.
+      if (
+        totalTasks > 0 &&
+        completedTasks === totalTasks &&
+        updated.programId &&
+        updated.week < 8
+      ) {
+        const program = await this.prisma.mentorshipProgram.findUnique({
+          where: { id: updated.programId },
+          select: { id: true, week: true },
+        });
+
+        // Only advance if the program is currently on this week
+        if (program && program.week === updated.week) {
+          const nextWeek = updated.week + 1;
+
+          await this.prisma.mentorshipProgram.update({
+            where: { id: program.id },
+            data: { week: nextWeek },
+          });
+
+          const existingNextWeekTasks = await this.prisma.mentorshipTask.count({
+            where: {
+              mentorshipId: updated.mentorshipId,
+              programId: updated.programId,
+              week: nextWeek,
+            },
+          });
+
+          if (existingNextWeekTasks === 0) {
+            await this.generateTasks(updated.mentorshipId, updated.programId, nextWeek);
+          }
+        }
+      }
+    } catch (e) {
+      // Do not block task updates if progress update fails
+      // eslint-disable-next-line no-console
+      console.error('Failed to update mentorship progress after task update', e);
+    }
+
+    return updated;
+  }
+
+  async getSessions(mentorshipId: string) {
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      select: { id: true, mentorId: true, menteeId: true },
+    });
+
+    if (!mentorship) {
+      throw new NotFoundException('Mentorship not found');
+    }
+
+    const sessions = await this.prisma.mentorshipSession.findMany({
+      where: { mentorshipId },
+      orderBy: { scheduledDate: 'desc' },
+    });
+
+    return sessions;
+  }
+
+  async recordSession(
+    mentorshipId: string,
+    actorUserId: string,
+    data: { nextSessionDate?: string; sessionCompleted?: boolean; notes?: string },
+  ) {
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      include: {
+        mentor: { select: { id: true, firstName: true, lastName: true } },
+        mentee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (!mentorship) {
+      throw new NotFoundException('Mentorship not found');
+    }
+
+    const isParticipant = mentorship.mentorId === actorUserId || mentorship.menteeId === actorUserId;
+    if (!isParticipant) {
+      throw new ForbiddenException('You are not allowed to update this mentorship');
+    }
+
+    // Build update data object - only include fields that are being updated
+    const updateData: any = {};
+
+    // Handle session completion
+    // Both mentor and mentee can mark sessions as complete
+    // This allows either party to confirm the session happened
+    if (data.sessionCompleted) {
+      const isMentor = mentorship.mentorId === actorUserId;
+      
+      // Find the most recent scheduled session that hasn't been completed
+      const nextSession = await this.prisma.mentorshipSession.findFirst({
+        where: {
+          mentorshipId,
+          status: SessionStatus.SCHEDULED,
+          scheduledDate: { lte: new Date() }, // Can complete if scheduled date has passed or is today
+        },
+        orderBy: { scheduledDate: 'desc' },
+      });
+
+      if (nextSession) {
+        // Mark the session as completed
+        await this.prisma.mentorshipSession.update({
+          where: { id: nextSession.id },
+          data: {
+            status: SessionStatus.COMPLETED,
+            actualDate: new Date(),
+            completedBy: actorUserId,
+            notes: data.notes || nextSession.notes,
+          },
+        });
+      } else {
+        // If no scheduled session found, create a completed session record
+        // This handles cases where sessions weren't scheduled in advance
+        await this.prisma.mentorshipSession.create({
+          data: {
+            mentorshipId,
+            scheduledDate: mentorship.nextSessionDate || new Date(),
+            actualDate: new Date(),
+            status: SessionStatus.COMPLETED,
+            completedBy: actorUserId,
+            notes: data.notes,
+          },
+        });
+      }
+
+      // Increment sessions completed count (only if not already completed)
+      // Check if we're completing a new session or updating an existing one
+      const wasAlreadyCompleted = nextSession?.status === SessionStatus.COMPLETED;
+      if (!wasAlreadyCompleted) {
+        updateData.sessionsCompleted = mentorship.sessionsCompleted + 1;
+      }
+      
+      // Notify the other party when a session is completed
+      const otherPartyId = isMentor ? mentorship.menteeId : mentorship.mentorId;
+      const actorName = isMentor
+        ? `${mentorship.mentor.firstName} ${mentorship.mentor.lastName}`
+        : `${mentorship.mentee.firstName} ${mentorship.mentee.lastName}`;
+      const actorRole = isMentor ? 'mentor' : 'mentee';
+
+      await this.notificationsService.createAndSend(otherPartyId, {
+        title: 'Session Completed',
+        message: `Your ${actorRole} marked the session as completed.`,
+        type: 'MENTORSHIP_REQUEST' as any,
+        mentorshipId: mentorship.id,
+      });
+    }
+
+    // Handle next session date
+    if (data.nextSessionDate !== undefined) {
+      if (data.nextSessionDate) {
+        const nextDate = new Date(data.nextSessionDate);
+        if (isNaN(nextDate.getTime())) {
+          throw new BadRequestException('Invalid date format for nextSessionDate');
+        }
+        
+        // Validate that the date is not too far in the past (allow same day)
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const sessionDate = new Date(nextDate);
+        sessionDate.setHours(0, 0, 0, 0);
+        
+        if (sessionDate < now) {
+          throw new BadRequestException('Cannot schedule sessions in the past');
+        }
+        
+        updateData.nextSessionDate = nextDate;
+
+        // Create or update a scheduled session record
+        const existingScheduled = await this.prisma.mentorshipSession.findFirst({
+          where: {
+            mentorshipId,
+            status: SessionStatus.SCHEDULED,
+            scheduledDate: { gte: now },
+          },
+          orderBy: { scheduledDate: 'asc' },
+        });
+
+        if (existingScheduled) {
+          // Update the existing scheduled session
+          await this.prisma.mentorshipSession.update({
+            where: { id: existingScheduled.id },
+            data: {
+              scheduledDate: nextDate,
+              notes: data.notes || existingScheduled.notes,
+            },
+          });
+        } else {
+          // Create a new scheduled session
+          await this.prisma.mentorshipSession.create({
+            data: {
+              mentorshipId,
+              scheduledDate: nextDate,
+              status: SessionStatus.SCHEDULED,
+              notes: data.notes,
+            },
+          });
+        }
+
+        // Notify the other party when a session is scheduled
+        const otherPartyId = mentorship.mentorId === actorUserId ? mentorship.menteeId : mentorship.mentorId;
+        const actorName = mentorship.mentorId === actorUserId 
+          ? `${mentorship.mentor.firstName} ${mentorship.mentor.lastName}`
+          : `${mentorship.mentee.firstName} ${mentorship.mentee.lastName}`;
+
+        // Format date for notification
+        const formattedDate = nextDate.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        const formattedTime = nextDate.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        });
+
+        await this.notificationsService.createAndSend(otherPartyId, {
+          title: 'Session Scheduled',
+          message: `${actorName} scheduled the next session for ${formattedDate} at ${formattedTime}.`,
+          type: 'MENTORSHIP_REQUEST' as any,
+          mentorshipId: mentorship.id,
+        });
+      } else {
+        // Explicitly clear the next session date if empty string/null is passed
+        updateData.nextSessionDate = null;
+        
+        // Cancel any upcoming scheduled sessions
+        await this.prisma.mentorshipSession.updateMany({
+          where: {
+            mentorshipId,
+            status: SessionStatus.SCHEDULED,
+            scheduledDate: { gte: new Date() },
+          },
+          data: {
+            status: SessionStatus.CANCELLED,
+          },
+        });
+      }
+    }
+
+    // Handle notes
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes || null;
+    }
+
+    // Activate mentorship if it was pending
+    if (mentorship.status === 'PENDING' && (data.sessionCompleted || data.nextSessionDate)) {
+      updateData.status = 'ACTIVE';
+      updateData.startedAt = new Date();
+    }
+
+    // Update the mentorship
+    const updated = await this.prisma.mentorship.update({
+      where: { id: mentorshipId },
+      data: updateData,
+      include: {
+        mentor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profileImage: true,
+          },
+        },
+        mentee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profileImage: true,
+          },
+        },
+        sessions: {
+          orderBy: { scheduledDate: 'desc' },
+          take: 20,
+        },
+      },
+    });
+
+    return updated;
   }
 
   // ==================== PROGRESS TRACKING ====================
@@ -900,6 +1621,10 @@ export class MentorshipService {
         },
         cycle: true,
         match: true,
+        sessions: {
+          orderBy: { scheduledDate: 'desc' },
+          take: 20,
+        },
         certificate: true,
       },
       orderBy: {
@@ -946,6 +1671,9 @@ export class MentorshipService {
             progress: true,
           },
         },
+        sessions: {
+          orderBy: { scheduledDate: 'desc' },
+        },
         certificate: true,
       },
     });
@@ -975,11 +1703,13 @@ export class MentorshipService {
       throw new ForbiddenException('Mentorship request already exists');
     }
 
+    const defaultCycleId = await this.getDefaultCycleId();
     const mentorship = await this.prisma.mentorship.create({
       data: {
         mentorId,
         menteeId,
         goals,
+        cycleId: defaultCycleId,
         status: MentorshipStatus.PENDING,
       },
       include: {
@@ -1019,6 +1749,9 @@ export class MentorshipService {
     const mentorship = await this.prisma.mentorship.findUnique({
       where: { id: mentorshipId },
       include: {
+        programs: {
+          select: { id: true },
+        },
         mentor: {
           select: {
             id: true,
@@ -1046,11 +1779,27 @@ export class MentorshipService {
       throw new ForbiddenException('Not authorized to accept this mentorship');
     }
 
+    // Ensure the mentorship is attached to a cycle so program/tasks can be generated.
+    const cycleId = mentorship.cycleId ?? (await this.getDefaultCycleId());
+
+    // Enforce mentor capacity (best-effort, MVP)
+    const mentorProfile = await this.prisma.mentorProfile.findUnique({
+      where: { userId: mentorId },
+      select: { currentMentees: true, maxMentees: true, isActive: true, isVerified: true },
+    });
+    if (!mentorProfile || !mentorProfile.isActive || !mentorProfile.isVerified) {
+      throw new ForbiddenException('Mentor profile must be active and verified');
+    }
+    if (mentorProfile.currentMentees >= mentorProfile.maxMentees) {
+      throw new BadRequestException('Mentor has reached maximum mentees');
+    }
+
     const updatedMentorship = await this.prisma.mentorship.update({
       where: { id: mentorshipId },
       data: {
         status: MentorshipStatus.ACTIVE,
         startedAt: new Date(),
+        cycleId: cycleId ?? undefined,
       },
       include: {
         mentor: {
@@ -1069,6 +1818,20 @@ export class MentorshipService {
             profileImage: true,
           },
         },
+      },
+    });
+
+    // Start the program if we have a cycle and no program yet.
+    if (cycleId && (!mentorship.programs || mentorship.programs.length === 0)) {
+      await this.createProgram(updatedMentorship.id, cycleId);
+    }
+
+    // Update mentor counts on acceptance (request-flow doesn't do it at creation time)
+    await this.prisma.mentorProfile.update({
+      where: { userId: mentorId },
+      data: {
+        currentMentees: { increment: 1 },
+        totalMentees: { increment: 1 },
       },
     });
 

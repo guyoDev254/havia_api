@@ -98,6 +98,24 @@ export class MentorshipController {
     return this.mentorshipService.getCycleById(id);
   }
 
+  // ==================== CYCLE INTEREST ====================
+
+  @Post('cycles/:id/interest')
+  @ApiOperation({ summary: 'Mark interest/enroll in a cycle (mentee/mentor)' })
+  async setCycleInterest(
+    @CurrentUser() user: any,
+    @Param('id') cycleId: string,
+    @Body('interested') interested: boolean,
+  ) {
+    return this.mentorshipService.setCycleInterest(user.id, cycleId, interested);
+  }
+
+  @Get('cycles/:id/interest')
+  @ApiOperation({ summary: 'Get my interest status for a cycle' })
+  async getMyCycleInterest(@CurrentUser() user: any, @Param('id') cycleId: string) {
+    return this.mentorshipService.getMyCycleInterest(user.id, cycleId);
+  }
+
   // ==================== MATCHING ====================
 
   @Get('matches')
@@ -152,14 +170,55 @@ export class MentorshipController {
     );
   }
 
+  @Post('tasks')
+  @ApiOperation({ summary: 'Create a new task for a mentorship (mentor only)' })
+  async createTask(
+    @CurrentUser() user: any,
+    @Body() data: {
+      mentorshipId: string;
+      programId?: string;
+      week: number;
+      title: string;
+      description?: string;
+      type?: string;
+      dueDate?: string;
+    },
+  ) {
+    return this.mentorshipService.createTask(user.id, data);
+  }
+
   @Put('tasks/:id/status')
-  @ApiOperation({ summary: 'Update task status' })
+  @ApiOperation({ summary: 'Update task status (mentee marks complete, mentor can approve/reject)' })
   async updateTaskStatus(
+    @CurrentUser() user: any,
     @Param('id') taskId: string,
     @Body('status') status: TaskStatus,
     @Body('mentorFeedback') mentorFeedback?: string,
   ) {
-    return this.mentorshipService.updateTaskStatus(taskId, status, mentorFeedback);
+    return this.mentorshipService.updateTaskStatus(taskId, user.id, status, mentorFeedback);
+  }
+
+  // ==================== SESSIONS ====================
+
+  @Get('sessions/:mentorshipId')
+  @ApiOperation({ summary: 'Get all sessions for a mentorship' })
+  async getSessions(@Param('mentorshipId') mentorshipId: string) {
+    return this.mentorshipService.getSessions(mentorshipId);
+  }
+
+  @Put(':id/session')
+  @ApiOperation({ summary: 'Schedule next session and/or mark a session as completed (mentor/mentee)' })
+  async recordSession(
+    @CurrentUser() user: any,
+    @Param('id') mentorshipId: string,
+    @Body()
+    body: {
+      nextSessionDate?: string;
+      sessionCompleted?: boolean;
+      notes?: string;
+    },
+  ) {
+    return this.mentorshipService.recordSession(mentorshipId, user.id, body);
   }
 
   // ==================== PROGRESS ====================

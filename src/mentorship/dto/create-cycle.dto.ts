@@ -8,6 +8,26 @@ export class CreateCycleDto {
   @IsOptional()
   description?: string;
 
+  @IsString()
+  @IsOptional()
+  benefits?: string;
+
+  @IsString()
+  @IsOptional()
+  expectedOutcomes?: string;
+
+  @IsString()
+  @IsOptional()
+  requirements?: string;
+
+  @IsString()
+  @IsOptional()
+  targetGroup?: string;
+
+  @IsString()
+  @IsOptional()
+  conditions?: string;
+
   @IsDateString()
   startDate: string;
 

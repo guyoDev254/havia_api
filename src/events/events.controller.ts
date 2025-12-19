@@ -2,6 +2,9 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Query } fro
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RequirePermissions } from '../common/decorators/permissions.decorator';
+import { Permission } from '../common/permissions/permissions.constant';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateEventDto } from './dto/create-event.dto';
 
@@ -30,11 +33,24 @@ export class EventsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_EVENTS, Permission.SCHEDULE_EVENTS)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new event' })
   async create(@CurrentUser() user: any, @Body() data: CreateEventDto) {
     return this.eventsService.create(user.id, data);
+  }
+
+  @Post('clubs/:clubId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create an event for a club (Super Admin, Club Managers, and Club Leads only)' })
+  async createClubEvent(
+    @CurrentUser() user: any,
+    @Param('clubId') clubId: string,
+    @Body() data: CreateEventDto,
+  ) {
+    return this.eventsService.createClubEvent(user.id, clubId, data, user.role);
   }
 
   @Post(':id/rsvp')

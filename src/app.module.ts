@@ -10,10 +10,16 @@ import { MentorshipModule } from './mentorship/mentorship.module';
 import { BadgesModule } from './badges/badges.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ChatModule } from './chat/chat.module';
+import { StudentsModule } from './students/students.module';
 import { AdminModule } from './admin/admin.module';
 import { ExploreModule } from './explore/explore.module';
 import { ActivityModule } from './activity/activity.module';
 import { HealthModule } from './health/health.module';
+import { PostsModule } from './posts/posts.module';
+import { UploadModule } from './upload/upload.module';
+import { ReportsModule } from './reports/reports.module';
+import { PartnershipsModule } from './partnerships/partnerships.module';
+import { CommunityPartnersModule } from './community-partners/community-partners.module';
 
 @Module({
   imports: [
@@ -40,6 +46,12 @@ import { HealthModule } from './health/health.module';
     ExploreModule,
     ActivityModule,
     HealthModule,
+    PostsModule,
+    StudentsModule,
+    UploadModule,
+    ReportsModule,
+    PartnershipsModule,
+    CommunityPartnersModule,
   ],
 })
 export class AppModule {}

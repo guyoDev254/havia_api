@@ -11,16 +11,22 @@ export class StorageService {
   constructor(private configService: ConfigService) {
     this.uploadPath = this.configService.get<string>('UPLOAD_PATH') || './uploads';
     // Use API URL for file serving
-    const apiPort = this.configService.get<string>('PORT') || '8000';
-    const apiHost = this.configService.get<string>('API_HOST') || 'http://localhost';
-    this.baseUrl = this.configService.get<string>('BASE_URL') || `${apiHost}:${apiPort}`;
+    // Try BASE_URL first, then construct from API_HOST and PORT
+    this.baseUrl = this.configService.get<string>('BASE_URL') || 
+      (() => {
+        const apiPort = this.configService.get<string>('PORT') || '8000';
+        const apiHost = this.configService.get<string>('API_HOST') || 'http://localhost';
+        return `${apiHost}:${apiPort}`;
+      })();
   }
 
   /**
    * Get the public URL for an uploaded file
    */
   getFileUrl(filename: string, folder: string = 'profile-images'): string {
-    return `${this.baseUrl}/uploads/${folder}/${filename}`;
+    // Remove any path separators from filename for security
+    const safeFilename = filename.replace(/[\/\\]/g, '');
+    return `${this.baseUrl}/uploads/${folder}/${safeFilename}`;
   }
 
   /**

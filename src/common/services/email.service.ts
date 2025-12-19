@@ -7,23 +7,172 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: nodemailer.Transporter;
 
+  private isConfigured: boolean = false;
+
   constructor(private configService: ConfigService) {
+    this.initializeTransporter();
+  }
+
+  private initializeTransporter() {
+    // Read all email configuration from .env
+    const smtpHost = this.configService.get<string>('SMTP_HOST');
+    const smtpPort = this.configService.get<string>('SMTP_PORT');
+    const smtpSecure = this.configService.get<string>('SMTP_SECURE');
+    const smtpUser = this.configService.get<string>('SMTP_USER');
+    const smtpPass = this.configService.get<string>('SMTP_PASS');
+    const smtpFrom = this.configService.get<string>('SMTP_FROM');
+
+    // Log configuration status (without sensitive data)
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.debug('Email Configuration:', {
+        host: smtpHost || 'not set',
+        port: smtpPort || 'not set',
+        secure: smtpSecure || 'not set',
+        user: smtpUser ? `${smtpUser.substring(0, 3)}***` : 'not set',
+        from: smtpFrom || 'not set',
+      });
+    }
+
     // Initialize email transporter
     const emailConfig = {
-      host: this.configService.get<string>('SMTP_HOST') || 'smtp.gmail.com',
-      port: parseInt(this.configService.get<string>('SMTP_PORT') || '587'),
-      secure: this.configService.get<string>('SMTP_SECURE') === 'true', // true for 465, false for other ports
+      host: smtpHost || 'smtp.gmail.com',
+      port: smtpPort ? parseInt(smtpPort, 10) : 587,
+      secure: smtpSecure === 'true' || smtpSecure === '1', // true for 465, false for other ports
       auth: {
-        user: this.configService.get<string>('SMTP_USER'),
-        pass: this.configService.get<string>('SMTP_PASS'),
+        user: smtpUser,
+        pass: smtpPass,
       },
     };
 
     // Only create transporter if credentials are provided
     if (emailConfig.auth.user && emailConfig.auth.pass) {
-      this.transporter = nodemailer.createTransport(emailConfig);
+      try {
+        this.transporter = nodemailer.createTransport(emailConfig);
+        this.isConfigured = true;
+        this.logger.log('Email service initialized successfully');
+      } catch (error) {
+        this.logger.error('Failed to initialize email transporter:', error);
+        this.isConfigured = false;
+      }
     } else {
-      this.logger.warn('Email service not configured. SMTP credentials missing.');
+      this.logger.warn('Email service not configured. SMTP credentials missing from .env');
+      this.isConfigured = false;
+    }
+  }
+
+  /**
+   * Check if email service is configured
+   */
+  isEmailConfigured(): boolean {
+    return this.isConfigured && !!this.transporter;
+  }
+
+  /**
+   * Get email configuration status (without sensitive data)
+   */
+  getConfigurationStatus() {
+    return {
+      configured: this.isEmailConfigured(),
+      host: this.configService.get<string>('SMTP_HOST') || 'not set',
+      port: this.configService.get<string>('SMTP_PORT') || 'not set',
+      secure: this.configService.get<string>('SMTP_SECURE') || 'not set',
+      from: this.configService.get<string>('SMTP_FROM') || 'not set',
+      user: this.configService.get<string>('SMTP_USER') ? 'configured' : 'not set',
+      pass: this.configService.get<string>('SMTP_PASS') ? 'configured' : 'not set',
+    };
+  }
+
+  /**
+   * Test email connection and send a test email
+   */
+  async testEmailConnection(testEmail?: string): Promise<{ success: boolean; message: string; details?: any }> {
+    if (!this.isEmailConfigured()) {
+      return {
+        success: false,
+        message: 'Email service is not configured. Please check your .env file for SMTP settings.',
+        details: this.getConfigurationStatus(),
+      };
+    }
+
+    try {
+      // Verify connection
+      await this.transporter.verify();
+      this.logger.log('Email connection verified successfully');
+
+      // If test email is provided, send a test email
+      if (testEmail) {
+        const testSubject = 'NorthernBox Email Service Test';
+        const testHtml = `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Email Test</title>
+            </head>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #0284c7 0%, #7c3aed 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+                <h1 style="color: white; margin: 0;">NorthernBox</h1>
+              </div>
+              <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e5e7eb;">
+                <h2 style="color: #111827; margin-top: 0;">Email Service Test</h2>
+                <p>Hello,</p>
+                <p>This is a test email from the NorthernBox API email service.</p>
+                <p style="color: #16a34a; font-weight: bold;">✅ If you received this email, your email service is working correctly!</p>
+                <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                  <strong>Test Details:</strong><br>
+                  Time: ${new Date().toLocaleString()}<br>
+                  Server: ${this.configService.get<string>('SMTP_HOST')}<br>
+                  Port: ${this.configService.get<string>('SMTP_PORT')}
+                </p>
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                <p style="color: #9ca3af; font-size: 12px; text-align: center;">© ${new Date().getFullYear()} NorthernBox. All rights reserved.</p>
+              </div>
+            </body>
+          </html>
+        `;
+
+        const sent = await this.sendEmail(testEmail, testSubject, testHtml);
+        if (sent) {
+          return {
+            success: true,
+            message: `Test email sent successfully to ${testEmail}`,
+            details: {
+              connection: 'verified',
+              emailSent: true,
+              recipient: testEmail,
+            },
+          };
+        } else {
+          return {
+            success: false,
+            message: 'Connection verified but failed to send test email',
+            details: {
+              connection: 'verified',
+              emailSent: false,
+            },
+          };
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Email connection verified successfully',
+        details: {
+          connection: 'verified',
+          emailSent: false,
+        },
+      };
+    } catch (error: any) {
+      this.logger.error('Email connection test failed:', error);
+      return {
+        success: false,
+        message: `Email connection test failed: ${error.message}`,
+        details: {
+          error: error.message,
+          code: error.code,
+        },
+      };
     }
   }
 

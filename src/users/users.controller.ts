@@ -11,7 +11,6 @@ import {
   UploadedFile,
   ParseFilePipe,
   MaxFileSizeValidator,
-  FileTypeValidator,
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -127,7 +126,7 @@ export class UsersController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB
-          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp)$/i }), // Case insensitive
+          // FileTypeValidator removed - validation is handled by multerConfig.fileFilter
         ],
         fileIsRequired: true,
       }),
@@ -146,15 +145,15 @@ export class UsersController {
         size: file.size,
       });
 
-      // Get file URL
-      const fileUrl = this.storageService.getFileUrl(file.filename);
+      // Get file URL - profile images are stored in profile-images folder
+      const fileUrl = this.storageService.getFileUrl(file.filename, 'profile-images');
       
       // Delete old profile image if exists
       const currentUser = await this.usersService.findOne(user.id);
       if (currentUser.profileImage) {
         const oldFilename = currentUser.profileImage.split('/').pop();
         if (oldFilename) {
-          await this.storageService.deleteFile(oldFilename);
+          await this.storageService.deleteFile(oldFilename, 'profile-images');
         }
       }
       

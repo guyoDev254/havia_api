@@ -10,8 +10,30 @@ async function bootstrap() {
   
   // Serve static files from uploads directory
   const uploadPath = process.env.UPLOAD_PATH || './uploads';
+  
+  // Ensure upload directory exists
+  const fs = require('fs');
+  if (!fs.existsSync(uploadPath)) {
+    fs.mkdirSync(uploadPath, { recursive: true });
+  }
+  
+  // Create subdirectories
+  const subdirs = ['profile-images', 'images', 'files', 'resources', 'club-logos', 'club-banners'];
+  subdirs.forEach((dir) => {
+    const dirPath = join(uploadPath, dir);
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+  });
+  
+  // Serve static files - allow access to all subdirectories
   app.useStaticAssets(join(process.cwd(), uploadPath), {
     prefix: '/uploads/',
+    setHeaders: (res, path) => {
+      // Set proper CORS headers for uploaded files
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    },
   });
 
   // Enable CORS
@@ -80,8 +102,10 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document);
 
   const port = process.env.PORT || 8000;
-  await app.listen(port);
+  // Listen on all interfaces (0.0.0.0) to allow network access from mobile devices
+  await app.listen(port, '0.0.0.0');
   console.log(`🚀 Havia API is running on: http://localhost:${port}`);
+  console.log(`🌐 Network access: http://0.0.0.0:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api`);
 }
 

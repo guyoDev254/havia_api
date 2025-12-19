@@ -61,5 +61,26 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   clubId?: string;
+
+  @ApiPropertyOptional({ description: 'Is this a paid event', default: false })
+  @IsOptional()
+  @IsBoolean()
+  isPaid?: boolean;
+
+  @ApiPropertyOptional({ description: 'Event price (required if isPaid is true)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @ApiPropertyOptional({ description: 'Currency code (e.g., KES, USD)', default: 'KES' })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @ApiPropertyOptional({ description: 'Payment link (e.g., M-Pesa, PayPal, Stripe)' })
+  @IsOptional()
+  @IsString()
+  paymentLink?: string;
 }
 
