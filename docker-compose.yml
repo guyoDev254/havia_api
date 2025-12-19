@@ -1,0 +1,64 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: havia-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # Database - uses DATABASE_URL from .env file
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # Application
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8000
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      
+      # Encryption
+      MESSAGE_ENCRYPTION_KEY: ${MESSAGE_ENCRYPTION_KEY:-change-this-in-production}
+      
+      # File Uploads
+      UPLOAD_PATH: /app/uploads
+      BASE_URL: ${BASE_URL:-http://localhost:8000}
+      API_HOST: ${API_HOST:-http://localhost}
+      
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:19006}
+      
+      # Frontend
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:19006}
+      
+      # Email (SMTP)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - uploads_data:/app/uploads
+    networks:
+      - havia-network
+    command: >
+      sh -c "
+        echo 'Running database migrations...' &&
+        npx prisma migrate deploy || echo 'Migrations failed or already applied' &&
+        echo 'Starting API server...' &&
+        node --max-old-space-size=2048 dist/main
+      "
+
+volumes:
+  uploads_data:
+    driver: local
+
+networks:
+  havia-network:
+    driver: bridge
+
