@@ -1,6 +1,9 @@
 # Multi-stage build for production
 FROM node:20-alpine AS builder
 
+# Install build dependencies including OpenSSL for Prisma
+RUN apk add --no-cache openssl openssl-dev libc6-compat
+
 # Set working directory
 WORKDIR /app
 
@@ -25,6 +28,9 @@ RUN yarn build
 
 # Production stage
 FROM node:20-alpine AS production
+
+# Install runtime dependencies including OpenSSL for Prisma
+RUN apk add --no-cache openssl openssl-dev libc6-compat
 
 # Set working directory
 WORKDIR /app
@@ -56,5 +62,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:1111/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Start the application
-CMD ["node", "--max-old-space-size=2048", "dist/main"]
+CMD ["node", "--max-old-space-size=2048", "dist/src/main"]
 
