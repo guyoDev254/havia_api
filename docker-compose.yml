@@ -7,7 +7,7 @@ services:
     container_name: havia-api
     restart: unless-stopped
     ports:
-      - "127.0.0.1:1111:1111"
+      - "1111:1111"
     env_file:
       - .env
     environment:
