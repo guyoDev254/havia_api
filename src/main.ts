@@ -44,6 +44,9 @@ async function bootstrap() {
     'http://127.0.0.1:19006', // Expo alternative
     'http://127.0.0.1:3001',
     'http://127.0.0.1:3000',
+    'https://northernbox.co.ke',
+    'https://www.northernbox.co.ke',
+    'https://api.northernbox.co.ke'
   ];
   
   const isDevelopment = process.env.NODE_ENV !== 'production';
