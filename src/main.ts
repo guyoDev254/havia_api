@@ -46,7 +46,8 @@ async function bootstrap() {
     'http://127.0.0.1:3000',
     'https://northernbox.co.ke',
     'https://www.northernbox.co.ke',
-    'https://api.northernbox.co.ke'
+    'https://api.northernbox.co.ke',
+    'https://havia-admin.vercel.app/'
   ];
   
   const isDevelopment = process.env.NODE_ENV !== 'production';
