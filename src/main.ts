@@ -47,7 +47,9 @@ async function bootstrap() {
     'https://northernbox.co.ke',
     'https://www.northernbox.co.ke',
     'https://api.northernbox.co.ke',
-    'https://havia-admin.vercel.app/'
+    'https://admin.northern.co.ke', // Production admin domain
+    'https://admin.northernbox.co.ke', // Alternative admin domain (if used)
+    'https://havia-admin.vercel.app', // Vercel deployment (removed trailing slash)
   ];
   
   const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -72,13 +74,40 @@ async function bootstrap() {
         }
       }
       
-      // Check against allowed origins
+      // Check against allowed origins (exact match)
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.warn(`CORS blocked origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
+        return callback(null, true);
       }
+      
+      // Also check if origin matches any allowed origin pattern (for subdomains)
+      // This handles cases like admin.northern.co.ke matching northern.co.ke patterns
+      const originUrl = new URL(origin);
+      const originHostname = originUrl.hostname;
+      
+      // Check if origin hostname ends with any allowed origin hostname
+      for (const allowedOrigin of allowedOrigins) {
+        try {
+          const allowedUrl = new URL(allowedOrigin);
+          const allowedHostname = allowedUrl.hostname;
+          
+          // Exact match
+          if (originHostname === allowedHostname) {
+            return callback(null, true);
+          }
+          
+          // Subdomain match: admin.northern.co.ke should match if northern.co.ke is allowed
+          if (originHostname.endsWith('.' + allowedHostname) || 
+              originHostname === allowedHostname.replace(/^www\./, '')) {
+            return callback(null, true);
+          }
+        } catch (e) {
+          // Invalid URL in allowedOrigins, skip
+          continue;
+        }
+      }
+      
+      console.warn(`CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
