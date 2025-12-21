@@ -40,7 +40,7 @@ async function bootstrap() {
   const allowedOrigins = [
     process.env.CORS_ORIGIN || 'http://localhost:19006',
     'http://localhost:3001', // Admin frontend
-    'http://localhost:3000', // Alternative admin port
+    'http://localhost:3000', // Alternative admin port  
     'http://127.0.0.1:19006', // Expo alternative
     'http://127.0.0.1:3001',
     'http://127.0.0.1:3000',
