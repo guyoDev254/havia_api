@@ -43,18 +43,29 @@ export class UsersService {
             },
           },
         },
-        clubs: {
+        clubMemberships: {
+          where: {
+            isActive: true,
+          },
           select: {
-            id: true,
-            name: true,
-            description: true,
-            image: true,
-            category: true,
+            club: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                image: true,
+                category: true,
+              },
+            },
           },
         },
         _count: {
           select: {
-            clubs: true,
+            clubMemberships: {
+              where: {
+                isActive: true,
+              },
+            },
             userBadges: true,
             attendedEvents: true,
             followers: true,
@@ -84,14 +95,24 @@ export class UsersService {
       isFollowing = !!follow;
     }
 
+    // Transform clubMemberships to clubs array for frontend compatibility
+    const clubs = user.clubMemberships?.map((membership) => membership.club) || [];
+
     return {
       ...user,
+      clubs,
+      clubMemberships: undefined, // Remove clubMemberships from response
+      _count: {
+        ...user._count,
+        clubs: user._count?.clubMemberships || 0,
+        clubMemberships: undefined, // Remove clubMemberships count from response
+      },
       isFollowing,
     };
   }
 
   async updateProfile(userId: string, updateData: any) {
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id: userId },
       data: updateData,
       select: {
@@ -124,26 +145,53 @@ export class UsersService {
             },
           },
         },
-        clubs: {
+        clubMemberships: {
+          where: {
+            isActive: true,
+          },
           select: {
-            id: true,
-            name: true,
-            description: true,
-            image: true,
-            category: true,
+            club: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                image: true,
+                category: true,
+              },
+            },
           },
         },
         _count: {
           select: {
-            clubs: true,
+            clubMemberships: {
+              where: {
+                isActive: true,
+              },
+            },
             userBadges: true,
             attendedEvents: true,
+            followers: true,
+            following: true,
           },
         },
         createdAt: true,
         updatedAt: true,
       },
     });
+
+    // Transform clubMemberships to clubs array for frontend compatibility
+    const clubs = user.clubMemberships?.map((membership) => membership.club) || [];
+
+    return {
+      ...user,
+      clubs,
+      clubMemberships: undefined, // Remove clubMemberships from response
+      _count: {
+        ...user._count,
+        clubs: user._count?.clubMemberships || 0,
+        clubMemberships: undefined, // Remove clubMemberships count from response
+      },
+    };
   }
 
   async resendVerificationEmail(userId: string) {
