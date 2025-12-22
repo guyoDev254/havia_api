@@ -498,11 +498,18 @@ export class AdminService {
         points: true,
         createdAt: true,
         updatedAt: true,
-        clubs: {
+        clubMemberships: {
+          where: {
+            isActive: true,
+          },
           select: {
-            id: true,
-            name: true,
-            category: true,
+            club: {
+              select: {
+                id: true,
+                name: true,
+                category: true,
+              },
+            },
           },
         },
         userBadges: {
@@ -945,7 +952,7 @@ export class AdminService {
       ['Points', user.points.toString()],
       ['Created At', user.createdAt.toISOString()],
       ['Updated At', user.updatedAt.toISOString()],
-      ['Clubs Count', user.clubs.length.toString()],
+      ['Clubs Count', (user.clubMemberships?.length || 0).toString()],
       ['Badges Count', user.userBadges.length.toString()],
     ];
 
