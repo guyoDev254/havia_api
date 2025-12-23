@@ -48,7 +48,12 @@ jobs:
       - name: Run ESLint (check only, no auto-fix)
         run: |
           # Run lint without --fix to check for errors (don't modify code in CI)
-          npx eslint "{src,apps,libs,test}/**/*.ts" --format stylish
+          # Use eslint directly without --fix flag
+          npx eslint "{src,apps,libs,test}/**/*.ts" --format stylish --max-warnings 0 || {
+            echo "⚠️ ESLint found issues that cannot be auto-fixed"
+            echo "Please fix the linting errors manually"
+            exit 1
+          }
           echo "✅ Lint check passed"
 
   test:
