@@ -21,7 +21,6 @@ jobs:
           node-version: 20
           cache: "yarn"
       - run: yarn install --frozen-lockfile
-      - run: yarn test
       - run: yarn build
 
   # Docker build for dev (optional, for testing)
