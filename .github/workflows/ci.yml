@@ -78,13 +78,27 @@ jobs:
 
   # Merge only job
   merge-to-main:
+    name: Create PR from dev to main
     if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
     needs: [build-and-test, docker-dev]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: peter-evans/merge-branch@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          from: dev
-          to: main
-          commit-message: "chore: merge dev into main [skip ci]"
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        base: main
+        branch: dev
+        title: "chore: promote dev to main"
+        body: |
+          Automated PR created after:
+          - build-and-test ✅
+          - docker-dev ✅
+
+          This PR requires human approval before merge.
+        labels: |
+          automated
+          release
