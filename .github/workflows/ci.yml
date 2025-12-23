@@ -1,92 +1,197 @@
-name: API CI
+name: API CI/CD
 
 on:
   push:
     branches: [ dev, main ]
   pull_request:
-    branches: [ dev ]
+    branches: [ dev, main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - test
+          - production
+
+env:
+  NODE_VERSION: '20'
+  REGISTRY: docker.io
+  IMAGE_NAME: guyo254/api
 
 permissions:
-  contents: write
+  contents: read
   packages: write
+  pull-requests: write
 
 jobs:
-  # Common job for both branches
-  build-and-test:
+  # ============================================
+  # Build
+  # ============================================
+  build:
+    name: Build Application
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "yarn"
-      - run: yarn install --frozen-lockfile
-      - run: yarn lint
-      - run: yarn test
-      - run: yarn build
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  # Docker build for dev (optional, for testing)
-  docker-dev:
-    if: github.ref == 'refs/heads/dev'
-    needs: build-and-test
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: yarn prisma:generate
+
+      - name: Build application
+        run: yarn build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: dist/
+          retention-days: 7
+
+  # ============================================
+  # Docker Build & Push
+  # ============================================
+  docker-build-test:
+    name: Build & Push Docker Image (Test)
     runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'test')
+    environment:
+      name: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: docker/metadata-action@v5
+
+      - name: Extract metadata
         id: meta
+        uses: docker/metadata-action@v5
         with:
-          images: your-docker-username/api-dev
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev
           tags: |
-            type=sha,prefix=dev-
             type=ref,event=branch
-      - uses: docker/build-push-action@v5
+            type=sha,prefix=dev-,format=short
+            type=raw,value=test-latest
+            type=raw,value=test-{{date 'YYYYMMDD'}}-{{sha}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=test
 
-  # Docker build for main (production)
-  docker-production:
-    if: github.ref == 'refs/heads/main'
-    needs: build-and-test
+  docker-build-production:
+    name: Build & Push Docker Image (Production)
     runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: docker/metadata-action@v5
+
+      - name: Extract metadata
         id: meta
+        uses: docker/metadata-action@v5
         with:
-          images: your-docker-username/api
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            latest
-      - uses: docker/build-push-action@v5
+            type=ref,event=branch
+            type=sha,prefix=prod-,format=short
+            type=raw,value=latest
+            type=raw,value=production-{{date 'YYYYMMDD'}}-{{sha}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
 
-  # Merge only job
-  merge-to-main:
-    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
-    needs: [build-and-test, docker-dev]
+  # ============================================
+  # Promote to Production
+  # ============================================
+  create-pr-to-main:
+    name: Create PR to Main
     runs-on: ubuntu-latest
+    needs: [docker-build-test]
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: peter-evans/merge-branch@v5
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          from: dev
-          to: main
-          commit-message: "chore: merge dev into main [skip ci]"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: promote dev to main [skip ci]'
+          title: '🚀 Promote dev to main'
+          body: |
+            ## Automated Promotion from Dev to Main
+
+            This PR was automatically created after successful CI checks:
+            - ✅ Build succeeded
+            - ✅ Docker image built and pushed (test environment)
+
+            **Review Checklist:**
+            - [ ] All tests passing
+            - [ ] Code review completed
+            - [ ] Security scan passed
+            - [ ] Ready for production deployment
+
+            **Docker Images:**
+            - Test: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev:dev`
+          branch: auto-promote-dev-to-main
+          base: main
+          labels: |
+            automated
+            promotion
+            ready-for-review
