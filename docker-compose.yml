@@ -7,7 +7,7 @@ services:
     container_name: havia-api
     restart: unless-stopped
     expose:
-      - "9000"
+      - "6000"
     env_file:
       - .env
     volumes:

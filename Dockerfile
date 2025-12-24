@@ -55,7 +55,7 @@ RUN mkdir -p uploads/profile-images uploads/images uploads/files uploads/resourc
 ENV NODE_ENV=production
 
 # Expose port
-EXPOSE 9000
+EXPOSE 6000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
