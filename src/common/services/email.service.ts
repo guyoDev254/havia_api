@@ -248,7 +248,8 @@ export class EmailService {
    * Send email verification email
    */
   async sendVerificationEmail(email: string, verificationToken: string, verificationUrl?: string): Promise<boolean> {
-    const verifyLink = verificationUrl || `${this.configService.get<string>('FRONTEND_URL') || 'http://localhost:19006'}/verify-email?token=${verificationToken}`;
+    const verifyLink = verificationUrl ?? `${this.configService.getOrThrow<string>('FRONTEND_URL')}/verify-email?token=${verificationToken}`;
+
     
     const html = `
       <!DOCTYPE html>
