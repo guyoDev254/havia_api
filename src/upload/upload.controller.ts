@@ -58,7 +58,7 @@ export class UploadController {
       throw new BadRequestException('No file uploaded');
     }
 
-    return this.uploadService.processUploadedFile(file, 'images');
+    return await this.uploadService.processUploadedFile(file, 'images');
   }
 
   @Post('images')
@@ -95,7 +95,7 @@ export class UploadController {
       throw new BadRequestException('No files uploaded');
     }
 
-    return this.uploadService.processUploadedFiles(files, 'images');
+    return await this.uploadService.processUploadedFiles(files, 'images');
   }
 
   @Post('file')
@@ -132,7 +132,7 @@ export class UploadController {
       throw new BadRequestException('No file uploaded');
     }
 
-    return this.uploadService.processUploadedFile(file, 'files');
+    return await this.uploadService.processUploadedFile(file, 'files');
   }
 
   @Post('resource')
@@ -165,7 +165,7 @@ export class UploadController {
       throw new BadRequestException('No file uploaded');
     }
 
-    return this.uploadService.processUploadedFile(file, 'resources');
+    return await this.uploadService.processUploadedFile(file, 'resources');
   }
 
   @Post('club-logo')
@@ -199,7 +199,7 @@ export class UploadController {
       throw new BadRequestException('No file uploaded');
     }
 
-    return this.uploadService.processUploadedFile(file, 'club-logos');
+    return await this.uploadService.processUploadedFile(file, 'club-logos');
   }
 
   @Post('club-banner')
@@ -233,7 +233,7 @@ export class UploadController {
       throw new BadRequestException('No file uploaded');
     }
 
-    return this.uploadService.processUploadedFile(file, 'club-banners');
+    return await this.uploadService.processUploadedFile(file, 'club-banners');
   }
 }
 
