@@ -33,6 +33,7 @@
     "@nestjs/swagger": "^7.1.17",
     "@nestjs/throttler": "^5.0.1",
     "@prisma/client": "^5.7.1",
+    "@sendgrid/mail": "^8.1.6",
     "@types/crypto-js": "^4.2.2",
     "@types/multer": "^2.0.0",
     "@types/nodemailer": "^7.0.4",
@@ -49,6 +50,7 @@
     "pg": "^8.11.3",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
+    "sendgrid": "^5.2.3",
     "swagger-ui-express": "^5.0.0"
   },
   "devDependencies": {
