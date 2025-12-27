@@ -181,7 +181,12 @@ enum NotificationType {
   CLUB_UPDATE
   SYSTEM_ANNOUNCEMENT
   FOLLOW
+  ASSIGNMENT_DUE
+  EXAM_REMINDER
+  ACADEMIC_DEADLINE
   OTHER
+  STUDY_GROUP_MEETUP
+  STUDY_GROUP_POST
 }
 
 enum ActivityType {
@@ -279,8 +284,18 @@ model User {
   userAuditLogs            AuditLog[]                @relation("UserAuditLogs")
   ledClubs                 Club[]                    @relation("ClubLeads")
   studentProfile           StudentProfile?
+  studentGoals             StudentGoal[]
   scholarshipApplications  ScholarshipApplication[]
   studyGroupMembers        StudyGroupMember[]
+  studyGroupPosts          StudyGroupPost[]          @relation("StudyGroupPostAuthor")
+  studyGroupPostComments   StudyGroupPostComment[]   @relation("StudyGroupPostCommentAuthor")
+  studyGroupPostReactions  StudyGroupPostReaction[]  @relation("StudyGroupPostReactionUser")
+  studyGroupMeetupsCreated StudyGroupMeetup[]        @relation("StudyGroupMeetupCreator")
+  studyGroupMeetupRSVPs    StudyGroupMeetupRSVP[]    @relation("StudyGroupMeetupRSVPUser")
+  courses                  Course[]                  @relation("UserCourses")
+  assignments              Assignment[]              @relation("UserAssignments")
+  academicCalendarEvents   AcademicCalendar[]        @relation("UserAcademicCalendar")
+  studySessions            StudySession[]            @relation("UserStudySessions")
   createdClubs             Club[]                    @relation("ClubCreators")
   clubMemberships          ClubMember[]              @relation("ClubMemberships")
   clubProgramsCreated      ClubProgram[]             @relation("ClubProgramCreators")
@@ -1297,6 +1312,31 @@ model StudentProfile {
   @@map("student_profiles")
 }
 
+enum GoalStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model StudentGoal {
+  id          String     @id @default(uuid())
+  userId      String
+  title       String
+  description String?    @db.Text
+  status      GoalStatus @default(PENDING)
+  targetDate  DateTime?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("student_goals")
+}
+
 model Scholarship {
   id             String          @id @default(uuid())
   title          String
@@ -1346,6 +1386,8 @@ model StudyGroup {
   updatedAt   DateTime       @updatedAt
 
   members StudyGroupMember[]
+  posts   StudyGroupPost[]
+  meetups StudyGroupMeetup[]
 
   @@map("study_groups")
 }
@@ -1364,6 +1406,123 @@ model StudyGroupMember {
   @@map("study_group_members")
 }
 
+model StudyGroupPost {
+  id           String   @id @default(uuid())
+  studyGroupId String
+  authorId     String
+  title        String?
+  content      String   @db.Text
+  images       String[] // Array of image URLs
+  isPinned     Boolean  @default(false)
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  studyGroup StudyGroup           @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+  author     User                 @relation("StudyGroupPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  comments   StudyGroupPostComment[]
+  reactions  StudyGroupPostReaction[]
+
+  @@index([studyGroupId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([isPinned])
+  @@map("study_group_posts")
+}
+
+model StudyGroupPostComment {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  content   String   @db.Text
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  post StudyGroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User           @relation("StudyGroupPostCommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("study_group_post_comments")
+}
+
+model StudyGroupPostReaction {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  type      ReactionType @default(LIKE)
+  createdAt DateTime @default(now())
+
+  // Relations
+  post StudyGroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User           @relation("StudyGroupPostReactionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+  @@map("study_group_post_reactions")
+}
+
+model StudyGroupMeetup {
+  id           String    @id @default(uuid())
+  studyGroupId String
+  createdById  String
+  title        String
+  description  String?   @db.Text
+  startDate    DateTime
+  endDate      DateTime?
+  location     String?
+  isOnline     Boolean   @default(false)
+  onlineLink   String?
+  maxAttendees Int?
+  isCancelled  Boolean   @default(false)
+  cancelledAt  DateTime?
+  cancelledBy  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  studyGroup StudyGroup             @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+  createdBy  User                   @relation("StudyGroupMeetupCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  attendees  StudyGroupMeetupRSVP[]
+
+  @@index([studyGroupId])
+  @@index([createdById])
+  @@index([startDate])
+  @@index([isCancelled])
+  @@map("study_group_meetups")
+}
+
+model StudyGroupMeetupRSVP {
+  id          String           @id @default(uuid())
+  meetupId    String
+  userId      String
+  status      MeetupRSVPStatus @default(ATTENDING)
+  notes       String?          @db.Text
+  respondedAt DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Relations
+  meetup StudyGroupMeetup @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  user   User             @relation("StudyGroupMeetupRSVPUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetupId, userId])
+  @@index([meetupId])
+  @@index([userId])
+  @@index([status])
+  @@map("study_group_meetup_rsvps")
+}
+
+enum MeetupRSVPStatus {
+  ATTENDING
+  NOT_ATTENDING
+  MAYBE
+}
+
 model AcademicResource {
   id          String          @id @default(uuid())
   title       String
@@ -1380,6 +1539,158 @@ model AcademicResource {
   updatedAt   DateTime        @updatedAt
 
   @@map("academic_resources")
+}
+
+// Academic Course & Grade Tracking
+enum CourseStatus {
+  ACTIVE
+  COMPLETED
+  DROPPED
+}
+
+enum Semester {
+  FALL
+  SPRING
+  SUMMER
+  WINTER
+}
+
+enum AssignmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+  LATE
+  MISSED
+}
+
+enum CalendarEventType {
+  EXAM
+  DEADLINE
+  HOLIDAY
+  SEMESTER_START
+  SEMESTER_END
+  CLASS_START
+  CLASS_END
+  OTHER
+}
+
+model Course {
+  id           String       @id @default(uuid())
+  userId       String
+  courseCode   String // e.g., "CS101", "MATH 201"
+  courseName   String
+  instructor   String?
+  credits      Float? // Credit hours
+  semester     Semester?
+  academicYear String? // e.g., "2024/2025"
+  status       CourseStatus @default(ACTIVE)
+  startDate    DateTime?
+  endDate      DateTime?
+  finalGrade   Float? // Overall course grade (0-100 or GPA scale)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user          User           @relation("UserCourses", fields: [userId], references: [id], onDelete: Cascade)
+  grades        CourseGrade[]
+  assignments   Assignment[]   @relation("CourseAssignments")
+  studySessions StudySession[] @relation("CourseStudySessions")
+
+  @@index([userId])
+  @@index([status])
+  @@index([semester, academicYear])
+  @@map("courses")
+}
+
+model CourseGrade {
+  id        String    @id @default(uuid())
+  courseId  String
+  title     String // e.g., "Midterm Exam", "Assignment 1", "Quiz 2"
+  grade     Float // Grade value (0-100 or GPA scale)
+  maxGrade  Float     @default(100) // Maximum possible grade
+  weight    Float? // Weight of this grade in course calculation (percentage)
+  gradedAt  DateTime? // When this was graded
+  notes     String?   @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@index([gradedAt])
+  @@map("course_grades")
+}
+
+model Assignment {
+  id          String           @id @default(uuid())
+  userId      String
+  courseId    String?
+  title       String
+  description String?          @db.Text
+  status      AssignmentStatus @default(NOT_STARTED)
+  dueDate     DateTime
+  completedAt DateTime?
+  grade       Float? // Grade received (if graded)
+  maxGrade    Float? // Maximum possible grade
+  priority    Int              @default(1) // 1=low, 2=medium, 3=high
+  notes       String?          @db.Text
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  user   User    @relation("UserAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation("CourseAssignments", fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("assignments")
+}
+
+model AcademicCalendar {
+  id          String            @id @default(uuid())
+  userId      String? // null for system-wide events
+  title       String
+  description String?           @db.Text
+  eventType   CalendarEventType
+  startDate   DateTime
+  endDate     DateTime?
+  isAllDay    Boolean           @default(true)
+  location    String?
+  color       String? // Hex color for calendar display
+  reminderAt  DateTime? // When to send reminder notification
+  isSystem    Boolean           @default(false) // System-wide events vs personal
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user User? @relation("UserAcademicCalendar", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([startDate])
+  @@index([isSystem])
+  @@map("academic_calendar")
+}
+
+model StudySession {
+  id        String    @id @default(uuid())
+  userId    String
+  courseId  String? // Optional: link to specific course
+  subject   String? // Subject/topic being studied
+  startTime DateTime
+  endTime   DateTime?
+  duration  Int       @default(0) // Duration in minutes
+  notes     String?   @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user   User    @relation("UserStudySessions", fields: [userId], references: [id], onDelete: Cascade)
+  course Course? @relation("CourseStudySessions", fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([startTime])
+  @@map("study_sessions")
 }
 
 // Reports & Moderation

@@ -311,6 +311,7 @@ export class ClubsService {
         userId,
         clubId,
         role: ClubRole.MEMBER,
+        isActive: true, // Explicitly set to ensure consistency
       },
     });
 
@@ -437,8 +438,10 @@ export class ClubsService {
 
     if (isManager) {
       // Get memberships with pagination and search
+      // Managers can see all members (including inactive) for management purposes
       const where: any = {
         clubId,
+        // Note: Managers can see inactive members, but we could add a filter option if needed
       };
 
       if (search) {
@@ -496,6 +499,7 @@ export class ClubsService {
     // Use ClubMember to find members instead of User relation
     const where: any = {
       clubId,
+      isActive: true, // Only show active members
     };
 
     if (search) {
@@ -1364,11 +1368,12 @@ export class ClubsService {
       }),
     ]);
 
-    // Member growth over last 30 days
+    // Member growth over last 30 days (only active members)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const newMembersLast30Days = await this.prisma.clubMember.count({
       where: {
         clubId,
+        isActive: true,
         joinedAt: {
           gte: thirtyDaysAgo,
         },

@@ -451,6 +451,7 @@ export class AdminService {
           lastName: true,
           role: true,
           isActive: true,
+          isEmailVerified: true,
           points: true,
           createdAt: true,
           _count: {
@@ -956,7 +957,54 @@ export class AdminService {
       ['Badges Count', user.userBadges.length.toString()],
     ];
 
-    return csvRows.map((row) => row.join(',')).join('\n');
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  }
+
+  async exportAnalytics() {
+    const stats = await this.getStatistics();
+    const trends = await this.getTrendData(30);
+
+    const csvRows = [
+      ['Metric', 'Value'],
+      ['Total Users', stats.users.total],
+      ['Active Users', stats.users.active],
+      ['New Users (Last 7 Days)', stats.users.recent],
+      ['Total Clubs', stats.clubs.total],
+      ['Total Events', stats.events.total],
+      ['Upcoming Events', stats.events.upcoming],
+      ['Total Mentorships', stats.mentorships.total],
+      ['Active Mentorships', stats.mentorships.active],
+      ['Total Badges', stats.badges.total],
+      ['Daily Active Users', stats.engagement?.dau || 0],
+      ['Weekly Active Users', stats.engagement?.wau || 0],
+      ['Monthly Active Users', stats.engagement?.mau || 0],
+      ['Total Reports', stats.moderation?.totalReports || 0],
+      ['Pending Reports', stats.moderation?.pendingReports || 0],
+      ['Resolved Reports', stats.moderation?.resolvedReports || 0],
+    ];
+
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  }
+
+  async exportAllUsers(search?: string, role?: UserRole) {
+    const users = await this.getAllUsers(1, 10000, search, role, undefined, 'createdAt', 'desc');
+    
+    const csvRows = [
+      ['ID', 'Email', 'First Name', 'Last Name', 'Role', 'Active', 'Email Verified', 'Points', 'Created At'],
+      ...users.users.map((user) => [
+        user.id,
+        user.email,
+        user.firstName,
+        user.lastName,
+        user.role,
+        user.isActive ? 'Yes' : 'No',
+        user.isEmailVerified ? 'Yes' : 'No',
+        user.points.toString(),
+        user.createdAt.toISOString(),
+      ]),
+    ];
+
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
   }
 
   // Deprecated: Use auditService.logAction instead
@@ -2330,6 +2378,7 @@ export class AdminService {
     limit = 20,
     search?: string,
     educationLevel?: string,
+    status?: string,
     sortBy = 'createdAt',
     sortOrder: 'asc' | 'desc' = 'desc',
   ) {
@@ -2349,6 +2398,12 @@ export class AdminService {
 
     if (educationLevel) {
       where.educationLevel = educationLevel;
+    }
+
+    if (status === 'active') {
+      where.isActive = true;
+    } else if (status === 'inactive') {
+      where.isActive = false;
     }
 
     const [students, total] = await Promise.all([
@@ -2380,6 +2435,11 @@ export class AdminService {
       where: { id },
       include: {
         studentProfile: true,
+        studentGoals: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
         scholarshipApplications: {
           include: {
             scholarship: true,
@@ -2388,6 +2448,63 @@ export class AdminService {
         studyGroupMembers: {
           include: {
             studyGroup: true,
+          },
+        },
+        courses: {
+          include: {
+            grades: {
+              orderBy: { gradedAt: 'desc' },
+            },
+            assignments: {
+              orderBy: { dueDate: 'asc' },
+              take: 10,
+            },
+            _count: {
+              select: {
+                grades: true,
+                assignments: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        assignments: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                courseCode: true,
+                courseName: true,
+              },
+            },
+          },
+          orderBy: { dueDate: 'asc' },
+          take: 20,
+        },
+        studySessions: {
+          include: {
+            course: {
+              select: {
+                id: true,
+                courseCode: true,
+                courseName: true,
+              },
+            },
+          },
+          orderBy: { startTime: 'desc' },
+          take: 20,
+        },
+        academicCalendarEvents: {
+          where: {
+            isSystem: false,
+          },
+          orderBy: { startDate: 'asc' },
+          take: 20,
+        },
+        _count: {
+          select: {
+            clubs: true,
+            userBadges: true,
           },
         },
       },
@@ -2622,9 +2739,194 @@ export class AdminService {
     };
   }
 
+  async createStudyGroup(data: {
+    name: string;
+    description: string;
+    subject: string;
+    level: string;
+    maxMembers?: number;
+    isActive?: boolean;
+    createdBy: string; // User ID who will be the leader
+  }) {
+    // Verify the user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id: data.createdBy },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const studyGroup = await this.prisma.studyGroup.create({
+      data: {
+        name: data.name,
+        description: data.description,
+        subject: data.subject,
+        level: data.level as any,
+        maxMembers: data.maxMembers || 10,
+        isActive: data.isActive !== false,
+        createdBy: data.createdBy,
+      },
+    });
+
+    // Add creator as leader
+    await this.prisma.studyGroupMember.create({
+      data: {
+        studyGroupId: studyGroup.id,
+        userId: data.createdBy,
+        role: 'LEADER',
+      },
+    });
+
+    // Return the full study group with members
+    return this.getStudyGroupById(studyGroup.id);
+  }
+
+  async getStudyGroupById(id: string) {
+    const studyGroup = await this.prisma.studyGroup.findUnique({
+      where: { id },
+      include: {
+        members: {
+          select: {
+            id: true,
+            userId: true,
+            role: true,
+            joinedAt: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                profileImage: true,
+                educationLevel: true,
+                schoolName: true,
+              },
+            },
+          },
+          orderBy: [
+            { role: 'asc' }, // Leaders first
+            { joinedAt: 'asc' },
+          ],
+        },
+        _count: {
+          select: {
+            members: true,
+          },
+        },
+      },
+    });
+
+    if (!studyGroup) {
+      throw new NotFoundException('Study group not found');
+    }
+
+    return studyGroup;
+  }
+
+  async updateStudyGroup(id: string, data: {
+    name?: string;
+    description?: string;
+    subject?: string;
+    level?: string;
+    maxMembers?: number;
+    isActive?: boolean;
+  }) {
+    const studyGroup = await this.getStudyGroupById(id);
+
+    // If updating maxMembers, ensure it's not less than current member count
+    if (data.maxMembers !== undefined && data.maxMembers < studyGroup.members.length) {
+      throw new BadRequestException(`Cannot set max members to ${data.maxMembers}. Group currently has ${studyGroup.members.length} members.`);
+    }
+
+    return this.prisma.studyGroup.update({
+      where: { id },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.description && { description: data.description }),
+        ...(data.subject && { subject: data.subject }),
+        ...(data.level && { level: data.level as any }),
+        ...(data.maxMembers && { maxMembers: data.maxMembers }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+      },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                profileImage: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            members: true,
+          },
+        },
+      },
+    });
+  }
+
+  async removeMemberFromStudyGroup(studyGroupId: string, userId: string) {
+    const member = await this.prisma.studyGroupMember.findUnique({
+      where: {
+        studyGroupId_userId: {
+          studyGroupId,
+          userId,
+        },
+      },
+    });
+
+    if (!member) {
+      throw new NotFoundException('Member not found in this study group');
+    }
+
+    // Don't allow removing the leader if there are other members
+    if (member.role === 'LEADER') {
+      const studyGroup = await this.getStudyGroupById(studyGroupId);
+      if (studyGroup.members.length > 1) {
+        throw new BadRequestException('Cannot remove leader while group has other members. Delete the group instead.');
+      }
+    }
+
+    return this.prisma.studyGroupMember.delete({
+      where: {
+        id: member.id,
+      },
+    });
+  }
+
   async deleteStudyGroup(id: string) {
+    // Delete all members first
+    await this.prisma.studyGroupMember.deleteMany({
+      where: { studyGroupId: id },
+    });
+
     return this.prisma.studyGroup.delete({
       where: { id },
+    });
+  }
+
+  async cancelStudyGroupMeetup(meetupId: string) {
+    const meetup = await this.prisma.studyGroupMeetup.findUnique({
+      where: { id: meetupId },
+    });
+
+    if (!meetup) {
+      throw new NotFoundException('Meetup not found');
+    }
+
+    return this.prisma.studyGroupMeetup.update({
+      where: { id: meetupId },
+      data: {
+        isCancelled: true,
+        cancelledAt: new Date(),
+      },
     });
   }
 
@@ -2790,6 +3092,86 @@ export class AdminService {
         total: totalApplications,
       },
     };
+  }
+
+  async exportStudents(educationLevel?: string) {
+    const where: any = { isStudent: true };
+    if (educationLevel) {
+      where.educationLevel = educationLevel;
+    }
+
+    const students = await this.prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        location: true,
+        educationLevel: true,
+        schoolName: true,
+        grade: true,
+        yearOfStudy: true,
+        major: true,
+        studentId: true,
+        createdAt: true,
+        studentProfile: {
+          select: {
+            gpa: true,
+            achievements: true,
+            extracurriculars: true,
+            careerGoals: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    const csvRows = [
+      [
+        'ID',
+        'Email',
+        'First Name',
+        'Last Name',
+        'Phone',
+        'Location',
+        'Education Level',
+        'School Name',
+        'Grade',
+        'Year of Study',
+        'Major',
+        'Student ID',
+        'GPA',
+        'Achievements',
+        'Extracurriculars',
+        'Career Goals',
+        'Created At',
+      ],
+      ...students.map((student) => [
+        student.id,
+        student.email,
+        student.firstName,
+        student.lastName,
+        student.phone || '',
+        student.location || '',
+        student.educationLevel || '',
+        student.schoolName || '',
+        student.grade || '',
+        student.yearOfStudy?.toString() || '',
+        student.major || '',
+        student.studentId || '',
+        student.studentProfile?.gpa?.toString() || '',
+        student.studentProfile?.achievements.join('; ') || '',
+        student.studentProfile?.extracurriculars.join('; ') || '',
+        student.studentProfile?.careerGoals || '',
+        student.createdAt.toISOString(),
+      ]),
+    ];
+
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
   }
 
   // Get trend data for charts

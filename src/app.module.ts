@@ -20,6 +20,8 @@ import { UploadModule } from './upload/upload.module';
 import { ReportsModule } from './reports/reports.module';
 import { PartnershipsModule } from './partnerships/partnerships.module';
 import { CommunityPartnersModule } from './community-partners/community-partners.module';
+import { ContentModule } from './content/content.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { CommunityPartnersModule } from './community-partners/community-partners
     ReportsModule,
     PartnershipsModule,
     CommunityPartnersModule,
+    ContentModule,
+    TasksModule,
   ],
 })
 export class AppModule {}

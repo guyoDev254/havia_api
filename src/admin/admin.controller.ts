@@ -179,6 +179,30 @@ export class AdminController {
     return res.send(csv);
   }
 
+  @Get('analytics/export')
+  @ApiOperation({ summary: 'Export analytics data as CSV' })
+  @RequirePermissions(Permission.VIEW_ANALYTICS)
+  async exportAnalytics(@Res() res: Response) {
+    const csv = await this.adminService.exportAnalytics();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=analytics-${Date.now()}.csv`);
+    return res.send(csv);
+  }
+
+  @Get('users/export/all')
+  @ApiOperation({ summary: 'Export all users as CSV' })
+  @RequirePermissions(Permission.EXPORT_DATA)
+  async exportAllUsers(
+    @Res() res: Response,
+    @Query('search') search?: string,
+    @Query('role') role?: UserRole,
+  ) {
+    const csv = await this.adminService.exportAllUsers(search, role);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=users-export-${Date.now()}.csv`);
+    return res.send(csv);
+  }
+
   @Get('audit-logs')
   @ApiOperation({ summary: 'Get all audit logs' })
   @RequirePermissions(Permission.VIEW_USERS)
@@ -648,6 +672,7 @@ export class AdminController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('educationLevel') educationLevel?: string,
+    @Query('status') status?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: 'asc' | 'desc',
   ) {
@@ -656,8 +681,9 @@ export class AdminController {
       limit ? parseInt(limit) : 20,
       search,
       educationLevel,
-      sortBy,
-      sortOrder,
+      status,
+      sortBy || 'createdAt',
+      sortOrder || 'desc',
     );
   }
 
@@ -673,6 +699,19 @@ export class AdminController {
   @RequirePermissions(Permission.VIEW_ANALYTICS)
   async getStudentStats() {
     return this.adminService.getStudentStats();
+  }
+
+  @Get('students/export')
+  @ApiOperation({ summary: 'Export all students as CSV' })
+  @RequirePermissions(Permission.EXPORT_DATA)
+  async exportStudents(
+    @Res() res: Response,
+    @Query('educationLevel') educationLevel?: string,
+  ) {
+    const csv = await this.adminService.exportStudents(educationLevel);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=students-export-${Date.now()}.csv`);
+    return res.send(csv);
   }
 
   // Scholarships Management
@@ -766,11 +805,69 @@ export class AdminController {
     );
   }
 
+  @Post('study-groups')
+  @ApiOperation({ summary: 'Create a new study group' })
+  @RequirePermissions(Permission.MANAGE_CLUBS)
+  async createStudyGroup(
+    @Body() body: {
+      name: string;
+      description: string;
+      subject: string;
+      level: string;
+      maxMembers?: number;
+      isActive?: boolean;
+      createdBy: string;
+    },
+  ) {
+    return this.adminService.createStudyGroup(body);
+  }
+
+  @Get('study-groups/:id')
+  @ApiOperation({ summary: 'Get study group by ID' })
+  @RequirePermissions(Permission.VIEW_ANALYTICS)
+  async getStudyGroupById(@Param('id') id: string) {
+    return this.adminService.getStudyGroupById(id);
+  }
+
+  @Put('study-groups/:id')
+  @ApiOperation({ summary: 'Update a study group' })
+  @RequirePermissions(Permission.MANAGE_CLUBS)
+  async updateStudyGroup(
+    @Param('id') id: string,
+    @Body() body: {
+      name?: string;
+      description?: string;
+      subject?: string;
+      level?: string;
+      maxMembers?: number;
+      isActive?: boolean;
+    },
+  ) {
+    return this.adminService.updateStudyGroup(id, body);
+  }
+
+  @Post('study-groups/:id/members/:userId/remove')
+  @ApiOperation({ summary: 'Remove a member from study group' })
+  @RequirePermissions(Permission.MANAGE_CLUBS)
+  async removeStudyGroupMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.adminService.removeMemberFromStudyGroup(id, userId);
+  }
+
   @Delete('study-groups/:id')
   @ApiOperation({ summary: 'Delete a study group' })
   @RequirePermissions(Permission.MANAGE_CLUBS)
   async deleteStudyGroup(@Param('id') id: string) {
     return this.adminService.deleteStudyGroup(id);
+  }
+
+  @Post('study-groups/meetups/:meetupId/cancel')
+  @ApiOperation({ summary: 'Cancel a study group meetup (admin)' })
+  @RequirePermissions(Permission.MANAGE_CLUBS)
+  async cancelStudyGroupMeetup(@Param('meetupId') meetupId: string) {
+    return this.adminService.cancelStudyGroupMeetup(meetupId);
   }
 
   // Academic Resources Management

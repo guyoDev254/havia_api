@@ -69,6 +69,37 @@ async function main() {
   await prisma.scholarship.deleteMany();
   await prisma.studentProfile.deleteMany();
   await prisma.academicResource.deleteMany();
+  // Delete academic tracking data (if tables exist)
+  try {
+    await prisma.courseGrade.deleteMany();
+  } catch (e) {
+    console.log('⚠️  course_grades table does not exist yet - skipping delete');
+  }
+  try {
+    await prisma.assignment.deleteMany();
+  } catch (e) {
+    console.log('⚠️  assignments table does not exist yet - skipping delete');
+  }
+  try {
+    await prisma.studySession.deleteMany();
+  } catch (e) {
+    console.log('⚠️  study_sessions table does not exist yet - skipping delete');
+  }
+  try {
+    await prisma.academicCalendar.deleteMany();
+  } catch (e) {
+    console.log('⚠️  academic_calendar table does not exist yet - skipping delete');
+  }
+  try {
+    await prisma.course.deleteMany();
+  } catch (e) {
+    console.log('⚠️  courses table does not exist yet - skipping delete');
+  }
+  try {
+    await prisma.studentGoal.deleteMany();
+  } catch (e) {
+    console.log('⚠️  student_goals table does not exist yet - skipping delete');
+  }
   // Now safe to delete users
   await prisma.user.deleteMany();
 
@@ -487,6 +518,1047 @@ async function main() {
       ],
       careerGoals: 'Pursue a PhD and become a research scientist in AI/ML, contributing to academic knowledge',
     },
+  });
+
+  // ==================== STUDENT GOALS ====================
+  console.log('🎯 Creating student goals...');
+  
+  await prisma.studentGoal.createMany({
+    data: [
+      {
+        userId: highSchoolStudent.id,
+        title: 'Maintain Top 10 Position in Class',
+        description: 'Keep GPA above 3.8 and maintain top 10 position throughout the academic year',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-12-31'),
+      },
+      {
+        userId: highSchoolStudent.id,
+        title: 'Complete Science Fair Project',
+        description: 'Build a robotics project for the upcoming science fair competition',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-03-15'),
+      },
+      {
+        userId: universityStudent1.id,
+        title: 'Get GPA Above 3.7',
+        description: 'Maintain excellent academic performance in Computer Science courses',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-05-31'),
+      },
+      {
+        userId: universityStudent1.id,
+        title: 'Build Portfolio Website',
+        description: 'Create a professional portfolio showcasing projects and skills',
+        status: 'COMPLETED',
+        targetDate: new Date('2024-11-30'),
+        completedAt: new Date('2024-11-25'),
+      },
+      {
+        userId: universityStudent1.id,
+        title: 'Complete Internship Application',
+        description: 'Apply to 5 software engineering internships for summer 2025',
+        status: 'PENDING',
+        targetDate: new Date('2025-02-28'),
+      },
+      {
+        userId: universityStudent2.id,
+        title: 'Graduate with First Class Honors',
+        description: 'Maintain strong academic performance to graduate with first class honors',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-12-31'),
+      },
+      {
+        userId: universityStudent2.id,
+        title: 'Complete Cybersecurity Certification',
+        description: 'Obtain CompTIA Security+ certification before graduation',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-08-31'),
+      },
+      {
+        userId: graduateStudent.id,
+        title: 'Publish Research Paper',
+        description: 'Complete and publish research paper on AI applications in healthcare',
+        status: 'COMPLETED',
+        targetDate: new Date('2024-12-31'),
+        completedAt: new Date('2024-11-15'),
+      },
+      {
+        userId: graduateStudent.id,
+        title: 'Defend Thesis Successfully',
+        description: 'Prepare and successfully defend master\'s thesis',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-05-30'),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // ==================== COURSES & GRADES ====================
+  console.log('📚 Creating courses and grades...');
+  
+  // Use existing 'now' variable - will be declared later in Events section
+  const seedNow = new Date();
+  const currentYear = seedNow.getFullYear();
+  const academicYear = `${currentYear}/${currentYear + 1}`;
+  const semesterStart = new Date(currentYear, 8, 1); // September
+  const semesterEnd = new Date(currentYear + 1, 4, 30); // May
+
+  // University Student 1 - Computer Science courses
+  const cs101 = await prisma.course.create({
+    data: {
+      userId: universityStudent1.id,
+      courseCode: 'CS101',
+      courseName: 'Introduction to Computer Science',
+      instructor: 'Dr. Sarah Kimani',
+      credits: 3,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  const cs201 = await prisma.course.create({
+    data: {
+      userId: universityStudent1.id,
+      courseCode: 'CS201',
+      courseName: 'Data Structures and Algorithms',
+      instructor: 'Prof. James Ochieng',
+      credits: 4,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  const cs301 = await prisma.course.create({
+    data: {
+      userId: universityStudent1.id,
+      courseCode: 'CS301',
+      courseName: 'Database Systems',
+      instructor: 'Dr. Mary Wanjiku',
+      credits: 3,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  // Completed course from previous semester
+  const math101 = await prisma.course.create({
+    data: {
+      userId: universityStudent1.id,
+      courseCode: 'MATH101',
+      courseName: 'Calculus I',
+      instructor: 'Dr. Peter Kariuki',
+      credits: 4,
+      semester: 'SPRING',
+      academicYear: `${currentYear - 1}/${currentYear}`,
+      status: 'COMPLETED',
+      startDate: new Date(currentYear - 1, 1, 1),
+      endDate: new Date(currentYear - 1, 5, 31),
+      finalGrade: 88.5,
+    },
+  });
+
+  // University Student 2 - IT courses
+  const it201 = await prisma.course.create({
+    data: {
+      userId: universityStudent2.id,
+      courseCode: 'IT201',
+      courseName: 'Web Development',
+      instructor: 'Dr. Ahmed Hassan',
+      credits: 3,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  const it301 = await prisma.course.create({
+    data: {
+      userId: universityStudent2.id,
+      courseCode: 'IT301',
+      courseName: 'Cybersecurity Fundamentals',
+      instructor: 'Prof. Fatuma Ali',
+      credits: 4,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  // Graduate Student - Master's courses
+  const ms501 = await prisma.course.create({
+    data: {
+      userId: graduateStudent.id,
+      courseCode: 'MS501',
+      courseName: 'Advanced Machine Learning',
+      instructor: 'Prof. David Mwangi',
+      credits: 3,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  const ms502 = await prisma.course.create({
+    data: {
+      userId: graduateStudent.id,
+      courseCode: 'MS502',
+      courseName: 'Research Methods in IT',
+      instructor: 'Dr. Linda Mutua',
+      credits: 3,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  // Add grades to courses
+  console.log('📊 Adding course grades...');
+  
+  // Grades for CS101
+  await prisma.courseGrade.createMany({
+    data: [
+      {
+        courseId: cs101.id,
+        title: 'Quiz 1',
+        grade: 85,
+        maxGrade: 100,
+        weight: 10,
+        gradedAt: new Date(seedNow.getTime() - 30 * 24 * 60 * 60 * 1000),
+        notes: 'Good understanding of basics',
+      },
+      {
+        courseId: cs101.id,
+        title: 'Midterm Exam',
+        grade: 92,
+        maxGrade: 100,
+        weight: 30,
+        gradedAt: new Date(seedNow.getTime() - 20 * 24 * 60 * 60 * 1000),
+        notes: 'Excellent performance',
+      },
+      {
+        courseId: cs101.id,
+        title: 'Assignment 1',
+        grade: 88,
+        maxGrade: 100,
+        weight: 15,
+        gradedAt: new Date(seedNow.getTime() - 25 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  });
+
+  // Grades for CS201
+  await prisma.courseGrade.createMany({
+    data: [
+      {
+        courseId: cs201.id,
+        title: 'Lab Assignment 1',
+        grade: 90,
+        maxGrade: 100,
+        weight: 10,
+        gradedAt: new Date(seedNow.getTime() - 28 * 24 * 60 * 60 * 1000),
+      },
+      {
+        courseId: cs201.id,
+        title: 'Midterm Exam',
+        grade: 87,
+        maxGrade: 100,
+        weight: 30,
+        gradedAt: new Date(seedNow.getTime() - 18 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  });
+
+  // Grades for IT201
+  await prisma.courseGrade.createMany({
+    data: [
+      {
+        courseId: it201.id,
+        title: 'Project 1: Portfolio Website',
+        grade: 95,
+        maxGrade: 100,
+        weight: 20,
+        gradedAt: new Date(seedNow.getTime() - 15 * 24 * 60 * 60 * 1000),
+        notes: 'Excellent design and implementation',
+      },
+      {
+        courseId: it201.id,
+        title: 'Quiz 2',
+        grade: 82,
+        maxGrade: 100,
+        weight: 10,
+        gradedAt: new Date(seedNow.getTime() - 10 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  });
+
+  // Grades for IT301
+  await prisma.courseGrade.createMany({
+    data: [
+      {
+        courseId: it301.id,
+        title: 'Lab: Penetration Testing',
+        grade: 88,
+        maxGrade: 100,
+        weight: 15,
+        gradedAt: new Date(seedNow.getTime() - 12 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  });
+
+  // Grades for MS501
+  await prisma.courseGrade.createMany({
+    data: [
+      {
+        courseId: ms501.id,
+        title: 'Research Paper Review',
+        grade: 92,
+        maxGrade: 100,
+        weight: 25,
+        gradedAt: new Date(seedNow.getTime() - 22 * 24 * 60 * 60 * 1000),
+        notes: 'Well-researched and insightful',
+      },
+      {
+        courseId: ms501.id,
+        title: 'Assignment: Neural Network Implementation',
+        grade: 94,
+        maxGrade: 100,
+        weight: 20,
+        gradedAt: new Date(seedNow.getTime() - 14 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  });
+
+  // ==================== ASSIGNMENTS ====================
+  console.log('📝 Creating assignments...');
+  
+  await prisma.assignment.createMany({
+    data: [
+      // Assignments for universityStudent1
+      {
+        userId: universityStudent1.id,
+        courseId: cs101.id,
+        title: 'Lab Exercise: Basic Programming',
+        description: 'Complete exercises 1-10 from Chapter 3',
+        status: 'GRADED',
+        dueDate: new Date(seedNow.getTime() - 5 * 24 * 60 * 60 * 1000),
+        completedAt: new Date(seedNow.getTime() - 6 * 24 * 60 * 60 * 1000),
+        grade: 88,
+        maxGrade: 100,
+        priority: 2,
+      },
+      {
+        userId: universityStudent1.id,
+        courseId: cs201.id,
+        title: 'Algorithm Analysis Report',
+        description: 'Analyze time complexity of sorting algorithms',
+        status: 'IN_PROGRESS',
+        dueDate: new Date(seedNow.getTime() + 7 * 24 * 60 * 60 * 1000),
+        priority: 3,
+        notes: 'Started research, need to complete analysis',
+      },
+      {
+        userId: universityStudent1.id,
+        courseId: cs301.id,
+        title: 'Database Design Project',
+        description: 'Design a normalized database for an e-commerce system',
+        status: 'NOT_STARTED',
+        dueDate: new Date(seedNow.getTime() + 14 * 24 * 60 * 60 * 1000),
+        priority: 3,
+      },
+      {
+        userId: universityStudent1.id,
+        courseId: null,
+        title: 'Internship Application - Tech Company',
+        description: 'Submit application materials for summer internship',
+        status: 'NOT_STARTED',
+        dueDate: new Date(seedNow.getTime() + 3 * 24 * 60 * 60 * 1000),
+        priority: 3,
+      },
+      // Assignments for universityStudent2
+      {
+        userId: universityStudent2.id,
+        courseId: it201.id,
+        title: 'Build Full-Stack Web Application',
+        description: 'Create a complete web app with React frontend and Node.js backend',
+        status: 'IN_PROGRESS',
+        dueDate: new Date(seedNow.getTime() + 10 * 24 * 60 * 60 * 1000),
+        priority: 3,
+        notes: 'Frontend completed, working on backend API',
+      },
+      {
+        userId: universityStudent2.id,
+        courseId: it301.id,
+        title: 'Security Assessment Report',
+        description: 'Conduct security assessment of a web application',
+        status: 'NOT_STARTED',
+        dueDate: new Date(seedNow.getTime() + 21 * 24 * 60 * 60 * 1000),
+        priority: 2,
+      },
+      {
+        userId: universityStudent2.id,
+        courseId: it301.id,
+        title: 'Quiz 3: Network Security',
+        description: 'Prepare for upcoming quiz on network security protocols',
+        status: 'IN_PROGRESS',
+        dueDate: new Date(seedNow.getTime() + 2 * 24 * 60 * 60 * 1000),
+        priority: 3,
+      },
+      // Assignments for graduateStudent
+      {
+        userId: graduateStudent.id,
+        courseId: ms501.id,
+        title: 'Research Proposal: AI in Healthcare',
+        description: 'Submit detailed research proposal for thesis work',
+        status: 'GRADED',
+        dueDate: new Date(seedNow.getTime() - 10 * 24 * 60 * 60 * 1000),
+        completedAt: new Date(seedNow.getTime() - 11 * 24 * 60 * 60 * 1000),
+        grade: 95,
+        maxGrade: 100,
+        priority: 3,
+      },
+      {
+        userId: graduateStudent.id,
+        courseId: ms502.id,
+        title: 'Literature Review',
+        description: 'Complete comprehensive literature review for research methods course',
+        status: 'IN_PROGRESS',
+        dueDate: new Date(seedNow.getTime() + 12 * 24 * 60 * 60 * 1000),
+        priority: 3,
+      },
+      {
+        userId: graduateStudent.id,
+        courseId: ms501.id,
+        title: 'Final Project: ML Model Implementation',
+        description: 'Implement and evaluate a machine learning model for healthcare prediction',
+        status: 'NOT_STARTED',
+        dueDate: new Date(seedNow.getTime() + 35 * 24 * 60 * 60 * 1000),
+        priority: 3,
+      },
+      // Overdue assignment (for testing)
+      {
+        userId: universityStudent1.id,
+        courseId: cs101.id,
+        title: 'Overdue: Quiz Preparation',
+        description: 'Study for quiz on data types and control structures',
+        status: 'NOT_STARTED',
+        dueDate: new Date(seedNow.getTime() - 2 * 24 * 60 * 60 * 1000),
+        priority: 2,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // ==================== ACADEMIC CALENDAR ====================
+  console.log('📅 Creating academic calendar events...');
+  
+  // System-wide events (visible to all students)
+  await prisma.academicCalendar.createMany({
+    data: [
+      {
+        userId: null,
+        title: 'Semester Break',
+        description: 'Mid-semester break - no classes',
+        eventType: 'HOLIDAY',
+        startDate: new Date(seedNow.getTime() + 45 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 52 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        isSystem: true,
+        color: '#FF5733',
+      },
+      {
+        userId: null,
+        title: 'Final Exams Begin',
+        description: 'Final examination period starts',
+        eventType: 'EXAM',
+        startDate: new Date(seedNow.getTime() + 90 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 100 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        isSystem: true,
+        color: '#C70039',
+        reminderAt: new Date(seedNow.getTime() + 83 * 24 * 60 * 60 * 1000), // 1 week before
+      },
+      {
+        userId: null,
+        title: 'Semester Ends',
+        description: 'End of fall semester',
+        eventType: 'SEMESTER_END',
+        startDate: new Date(seedNow.getTime() + 105 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        isSystem: true,
+        color: '#900C3F',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // Personal calendar events for students
+  await prisma.academicCalendar.createMany({
+    data: [
+      // University Student 1 events
+      {
+        userId: universityStudent1.id,
+        title: 'CS101 Midterm Exam',
+        description: 'Midterm examination for Introduction to Computer Science',
+        eventType: 'EXAM',
+        startDate: new Date(seedNow.getTime() + 21 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 21 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Main Hall - Room 201',
+        color: '#FF6B6B',
+        reminderAt: new Date(seedNow.getTime() + 18 * 24 * 60 * 60 * 1000), // 3 days before
+      },
+      {
+        userId: universityStudent1.id,
+        title: 'CS201 Assignment Due',
+        description: 'Algorithm Analysis Report submission deadline',
+        eventType: 'DEADLINE',
+        startDate: new Date(seedNow.getTime() + 7 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        color: '#4ECDC4',
+        reminderAt: new Date(seedNow.getTime() + 4 * 24 * 60 * 60 * 1000), // 3 days before
+      },
+      {
+        userId: universityStudent1.id,
+        title: 'CS301 Project Presentation',
+        description: 'Present database design project to class',
+        eventType: 'DEADLINE',
+        startDate: new Date(seedNow.getTime() + 14 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 14 * 24 * 60 * 60 * 1000 + 1 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Tech Building - Room 305',
+        color: '#45B7D1',
+        reminderAt: new Date(seedNow.getTime() + 11 * 24 * 60 * 60 * 1000),
+      },
+      // University Student 2 events
+      {
+        userId: universityStudent2.id,
+        title: 'IT201 Project Submission',
+        description: 'Final submission for full-stack web application project',
+        eventType: 'DEADLINE',
+        startDate: new Date(seedNow.getTime() + 10 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        color: '#96CEB4',
+        reminderAt: new Date(seedNow.getTime() + 7 * 24 * 60 * 60 * 1000),
+      },
+      {
+        userId: universityStudent2.id,
+        title: 'IT301 Quiz 3',
+        description: 'Network Security quiz',
+        eventType: 'EXAM',
+        startDate: new Date(seedNow.getTime() + 2 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 2 * 24 * 60 * 60 * 1000 + 1 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'IT Lab - Room 102',
+        color: '#FFEAA7',
+        reminderAt: new Date(seedNow.getTime() - 12 * 60 * 60 * 1000), // 12 hours before
+      },
+      {
+        userId: universityStudent2.id,
+        title: 'Study Group Meeting',
+        description: 'Weekly study group session for IT courses',
+        eventType: 'OTHER',
+        startDate: new Date(seedNow.getTime() + 5 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 5 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Library - Study Room 3',
+        color: '#DDA15E',
+      },
+      // Graduate Student events
+      {
+        userId: graduateStudent.id,
+        title: 'Thesis Defense Preparation',
+        description: 'Final preparation meeting with advisor before thesis defense',
+        eventType: 'OTHER',
+        startDate: new Date(seedNow.getTime() + 60 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 60 * 24 * 60 * 60 * 1000 + 1 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Graduate Office',
+        color: '#6C5CE7',
+        reminderAt: new Date(seedNow.getTime() + 57 * 24 * 60 * 60 * 1000),
+      },
+      {
+        userId: graduateStudent.id,
+        title: 'Research Methods - Literature Review Due',
+        description: 'Submit comprehensive literature review',
+        eventType: 'DEADLINE',
+        startDate: new Date(seedNow.getTime() + 12 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        color: '#A29BFE',
+        reminderAt: new Date(seedNow.getTime() + 9 * 24 * 60 * 60 * 1000),
+      },
+      {
+        userId: graduateStudent.id,
+        title: 'ML Model Presentation',
+        description: 'Present machine learning model implementation to class',
+        eventType: 'DEADLINE',
+        startDate: new Date(seedNow.getTime() + 35 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 35 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Grad Lab - Room 401',
+        color: '#FD79A8',
+        reminderAt: new Date(seedNow.getTime() + 32 * 24 * 60 * 60 * 1000),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // ==================== STUDY SESSIONS ====================
+  console.log('📖 Creating study sessions...');
+  
+  // Create study sessions for the past 30 days
+  const sessionData = [];
+  
+  // University Student 1 study sessions
+  for (let i = 1; i <= 15; i++) {
+    const daysAgo = i * 2;
+    const startTime = new Date(seedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    startTime.setHours(14 + (i % 4)); // Vary start times
+    startTime.setMinutes(0);
+    
+    const duration = 60 + (i % 3) * 30; // 60, 90, or 120 minutes
+    const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+    
+    // Alternate between different courses
+    const courseIds = [cs101.id, cs201.id, cs301.id, null];
+    const subjects = ['Data Structures', 'Algorithms', 'Programming Basics', 'Database Concepts', null];
+    
+    sessionData.push({
+      userId: universityStudent1.id,
+      courseId: courseIds[i % courseIds.length],
+      subject: subjects[i % subjects.length],
+      startTime: startTime,
+      endTime: endTime,
+      duration: duration,
+      notes: i % 3 === 0 ? `Focused session on ${subjects[i % subjects.length]}` : null,
+    });
+  }
+
+  // University Student 2 study sessions
+  for (let i = 1; i <= 12; i++) {
+    const daysAgo = i * 2.5;
+    const startTime = new Date(seedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    startTime.setHours(16 + (i % 3));
+    startTime.setMinutes(30);
+    
+    const duration = 90 + (i % 2) * 30; // 90 or 120 minutes
+    const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+    
+    const courseIds = [it201.id, it301.id, null];
+    const subjects = ['Web Development', 'React Components', 'Cybersecurity', 'Network Security', null];
+    
+    sessionData.push({
+      userId: universityStudent2.id,
+      courseId: courseIds[i % courseIds.length],
+      subject: subjects[i % subjects.length],
+      startTime: startTime,
+      endTime: endTime,
+      duration: duration,
+      notes: i % 4 === 0 ? `Group study session` : null,
+    });
+  }
+
+  // Graduate Student study sessions
+  for (let i = 1; i <= 18; i++) {
+    const daysAgo = i * 1.5;
+    const startTime = new Date(seedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    startTime.setHours(9 + (i % 6));
+    startTime.setMinutes(i % 2 === 0 ? 0 : 30);
+    
+    const duration = 120 + (i % 3) * 30; // 120, 150, or 180 minutes
+    const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+    
+    const courseIds = [ms501.id, ms502.id, null];
+    const subjects = ['Machine Learning', 'Research Methods', 'Thesis Writing', 'Literature Review', null];
+    
+    sessionData.push({
+      userId: graduateStudent.id,
+      courseId: courseIds[i % courseIds.length],
+      subject: subjects[i % subjects.length],
+      startTime: startTime,
+      endTime: endTime,
+      duration: duration,
+      notes: i % 5 === 0 ? `Research session - good progress` : null,
+    });
+  }
+
+  // Batch create all study sessions
+  await processInBatches(sessionData, 10, async (session) => {
+    return prisma.studySession.create({ data: session });
+  });
+
+  console.log('✅ Student academic features seed data created!');
+
+  // ==================== STUDY GROUPS ====================
+  console.log('👥 Creating study groups...');
+
+  const studyGroup1 = await prisma.studyGroup.create({
+    data: {
+      name: 'Computer Science Study Group',
+      description: 'Study group for CS students covering data structures, algorithms, and programming fundamentals',
+      subject: 'Computer Science',
+      level: 'UNIVERSITY',
+      maxMembers: 15,
+      isActive: true,
+      createdBy: universityStudent1.id,
+    },
+  });
+
+  const studyGroup2 = await prisma.studyGroup.create({
+    data: {
+      name: 'Web Development Study Group',
+      description: 'Collaborative learning group for web development technologies - React, Node.js, and full-stack development',
+      subject: 'Web Development',
+      level: 'UNIVERSITY',
+      maxMembers: 12,
+      isActive: true,
+      createdBy: universityStudent2.id,
+    },
+  });
+
+  const studyGroup3 = await prisma.studyGroup.create({
+    data: {
+      name: 'Mathematics Study Circle',
+      description: 'Advanced mathematics study group for calculus, linear algebra, and statistics',
+      subject: 'Mathematics',
+      level: 'UNIVERSITY',
+      maxMembers: 10,
+      isActive: true,
+      createdBy: universityStudent1.id,
+    },
+  });
+
+  const studyGroup4 = await prisma.studyGroup.create({
+    data: {
+      name: 'Cybersecurity Study Group',
+      description: 'Study group focused on cybersecurity fundamentals, network security, and ethical hacking',
+      subject: 'Cybersecurity',
+      level: 'UNIVERSITY',
+      maxMembers: 8,
+      isActive: true,
+      createdBy: universityStudent2.id,
+    },
+  });
+
+  const studyGroup5 = await prisma.studyGroup.create({
+    data: {
+      name: 'Machine Learning Study Group',
+      description: 'Study group for ML enthusiasts - covering algorithms, neural networks, and AI applications',
+      subject: 'Machine Learning',
+      level: 'TVET',
+      maxMembers: 10,
+      isActive: true,
+      createdBy: graduateStudent.id,
+    },
+  });
+
+  // Add members to study groups
+  await prisma.studyGroupMember.createMany({
+    data: [
+      // Study Group 1 - CS Study Group
+      { studyGroupId: studyGroup1.id, userId: universityStudent1.id, role: 'LEADER' },
+      { studyGroupId: studyGroup1.id, userId: universityStudent2.id, role: 'MEMBER' },
+      // Study Group 2 - Web Dev
+      { studyGroupId: studyGroup2.id, userId: universityStudent2.id, role: 'LEADER' },
+      { studyGroupId: studyGroup2.id, userId: universityStudent1.id, role: 'MEMBER' },
+      // Study Group 3 - Math
+      { studyGroupId: studyGroup3.id, userId: universityStudent1.id, role: 'LEADER' },
+      // Study Group 4 - Cybersecurity
+      { studyGroupId: studyGroup4.id, userId: universityStudent2.id, role: 'LEADER' },
+      // Study Group 5 - ML
+      { studyGroupId: studyGroup5.id, userId: graduateStudent.id, role: 'LEADER' },
+      { studyGroupId: studyGroup5.id, userId: universityStudent1.id, role: 'MEMBER' },
+    ],
+    skipDuplicates: true,
+  });
+
+  // ==================== SCHOLARSHIPS ====================
+  console.log('💰 Creating scholarships...');
+
+  await prisma.scholarship.createMany({
+    data: [
+      {
+        title: 'NorthernBox Tech Scholarship 2025',
+        description: 'Full tuition scholarship for outstanding students pursuing technology-related degrees. Covers tuition, books, and living expenses.',
+        provider: 'NorthernBox Foundation',
+        amount: 'KES 500,000 per year',
+        eligibility: [
+          'Must be enrolled in a technology-related program',
+          'Minimum GPA of 3.5',
+          'Demonstrated financial need',
+          'Active participation in NorthernBox community',
+        ],
+        requirements: [
+          'Completed application form',
+          'Academic transcripts',
+          'Personal statement (500 words)',
+          'Two recommendation letters',
+          'Proof of enrollment',
+        ],
+        deadline: new Date(seedNow.getTime() + 60 * 24 * 60 * 60 * 1000), // 60 days from now
+        isActive: true,
+        category: 'Academic',
+        level: 'UNIVERSITY',
+      },
+      {
+        title: 'Women in STEM Scholarship',
+        description: 'Scholarship program to support women pursuing STEM degrees in Northern Kenya. Includes mentorship opportunities.',
+        provider: 'Women in Tech Initiative',
+        amount: 'KES 300,000',
+        eligibility: [
+          'Female students only',
+          'Enrolled in STEM program',
+          'Minimum GPA of 3.0',
+          'From Northern Kenya region',
+        ],
+        requirements: [
+          'Application form',
+          'Academic transcripts',
+          'Essay on career goals',
+          'Recommendation letter',
+        ],
+        deadline: new Date(seedNow.getTime() + 45 * 24 * 60 * 60 * 1000), // 45 days from now
+        isActive: true,
+        category: 'Academic',
+        level: 'UNIVERSITY',
+      },
+      {
+        title: 'Merit-Based High School Scholarship',
+        description: 'Scholarship for high-performing high school students to continue their education.',
+        provider: 'Education Excellence Foundation',
+        amount: 'KES 100,000',
+        eligibility: [
+          'Current high school students',
+          'Minimum grade of B+',
+          'Demonstrated leadership',
+        ],
+        requirements: [
+          'School transcripts',
+          'Principal recommendation',
+          'Community service evidence',
+        ],
+        deadline: new Date(seedNow.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        isActive: true,
+        category: 'Merit-based',
+        level: 'SECONDARY',
+      },
+      {
+        title: 'TVET Skills Development Scholarship',
+        description: 'Scholarship for students pursuing Technical and Vocational Education and Training programs.',
+        provider: 'Skills Development Fund',
+        amount: 'KES 150,000',
+        eligibility: [
+          'Enrolled in TVET program',
+          'Demonstrated financial need',
+          'Commitment to skills development',
+        ],
+        requirements: [
+          'Application form',
+          'TVET enrollment proof',
+          'Financial need documentation',
+        ],
+        deadline: new Date(seedNow.getTime() + 40 * 24 * 60 * 60 * 1000), // 40 days from now
+        isActive: true,
+        category: 'Skills Development',
+        level: 'TVET',
+      },
+      {
+        title: 'Graduate Research Scholarship',
+        description: 'Research scholarship for graduate students conducting innovative research in technology and innovation.',
+        provider: 'Research and Innovation Fund',
+        amount: 'KES 400,000',
+        eligibility: [
+          'Graduate students (Masters/PhD)',
+          'Research proposal required',
+          'Minimum GPA of 3.7',
+        ],
+        requirements: [
+          'Research proposal (2000 words)',
+          'Academic transcripts',
+          'Supervisor recommendation',
+          'Research timeline',
+        ],
+        deadline: new Date(seedNow.getTime() + 50 * 24 * 60 * 60 * 1000), // 50 days from now
+        isActive: true,
+        category: 'Research',
+        level: 'UNIVERSITY',
+      },
+      {
+        title: 'Out-of-School Youth Training Scholarship',
+        description: 'Scholarship for out-of-school youth to pursue vocational training and skills development programs.',
+        provider: 'Youth Empowerment Initiative',
+        amount: 'KES 80,000',
+        eligibility: [
+          'Out-of-school youth (18-25 years)',
+          'No formal education required',
+          'Demonstrated commitment to learning',
+        ],
+        requirements: [
+          'Application form',
+          'Personal statement',
+          'Community leader recommendation',
+        ],
+        deadline: new Date(seedNow.getTime() + 35 * 24 * 60 * 60 * 1000), // 35 days from now
+        isActive: true,
+        category: 'Youth Development',
+        level: 'OUT_OF_SCHOOL',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // Create some scholarship applications
+  const scholarships = await prisma.scholarship.findMany({ take: 6 });
+  if (scholarships.length > 0) {
+    await prisma.scholarshipApplication.createMany({
+      data: [
+        {
+          userId: universityStudent1.id,
+          scholarshipId: scholarships[0].id, // Tech Scholarship
+          status: 'PENDING',
+          notes: 'Applied for technology scholarship to support my computer science studies',
+        },
+        {
+          userId: universityStudent2.id,
+          scholarshipId: scholarships[1].id, // Women in STEM
+          status: 'SUBMITTED',
+          notes: 'Excited to apply for this opportunity to advance my IT career',
+        },
+        {
+          userId: graduateStudent.id,
+          scholarshipId: scholarships[4].id, // Graduate Research
+          status: 'UNDER_REVIEW',
+          notes: 'Research proposal on AI applications in healthcare submitted',
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+
+  // ==================== ACADEMIC RESOURCES ====================
+  console.log('📚 Creating academic resources...');
+
+  await prisma.academicResource.createMany({
+    data: [
+      {
+        title: 'Introduction to Data Structures',
+        description: 'Comprehensive guide to data structures including arrays, linked lists, stacks, queues, trees, and graphs. Includes code examples in Python and Java.',
+        type: 'STUDY_MATERIAL',
+        subject: 'Computer Science',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/data-structures-guide',
+        tags: ['data-structures', 'algorithms', 'programming'],
+        isActive: true,
+      },
+      {
+        title: 'Web Development Fundamentals Course',
+        description: 'Free online course covering HTML, CSS, JavaScript, and React. Perfect for beginners and intermediate developers.',
+        type: 'COURSE',
+        subject: 'Web Development',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/web-dev-course',
+        tags: ['web-development', 'react', 'javascript', 'html-css'],
+        isActive: true,
+      },
+      {
+        title: 'Database Design Best Practices',
+        description: 'Video tutorial series on database normalization, query optimization, and SQL best practices.',
+        type: 'VIDEO',
+        subject: 'Database Systems',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/database-tutorials',
+        tags: ['database', 'sql', 'normalization'],
+        isActive: true,
+      },
+      {
+        title: 'Cybersecurity Fundamentals Book',
+        description: 'Free e-book covering cybersecurity basics, network security, cryptography, and ethical hacking principles.',
+        type: 'BOOK',
+        subject: 'Cybersecurity',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/cybersecurity-book',
+        tags: ['cybersecurity', 'network-security', 'cryptography'],
+        isActive: true,
+      },
+      {
+        title: 'Mathematics Problem Solving Guide',
+        description: 'Study guide for calculus, linear algebra, and statistics with practice problems and solutions.',
+        type: 'STUDY_MATERIAL',
+        subject: 'Mathematics',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/math-guide',
+        tags: ['mathematics', 'calculus', 'statistics'],
+        isActive: true,
+      },
+      {
+        title: 'Machine Learning Crash Course',
+        description: 'Interactive course covering machine learning algorithms, neural networks, and practical applications.',
+        type: 'COURSE',
+        subject: 'Machine Learning',
+        level: 'TVET',
+        url: 'https://example.com/ml-course',
+        tags: ['machine-learning', 'ai', 'neural-networks'],
+        isActive: true,
+      },
+      {
+        title: 'Python Programming Tutorials',
+        description: 'Step-by-step Python programming tutorials for beginners. Covers syntax, data types, functions, and OOP.',
+        type: 'VIDEO',
+        subject: 'Programming',
+        level: 'SECONDARY',
+        url: 'https://example.com/python-tutorials',
+        tags: ['python', 'programming', 'beginner'],
+        isActive: true,
+      },
+      {
+        title: 'Academic Writing Guide',
+        description: 'Guide to writing research papers, theses, and academic essays. Includes formatting and citation guidelines.',
+        type: 'ARTICLE',
+        subject: 'Academic Writing',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/writing-guide',
+        tags: ['academic-writing', 'research', 'citations'],
+        isActive: true,
+      },
+      {
+        title: 'Git and Version Control Tutorial',
+        description: 'Learn Git fundamentals, branching, merging, and collaborative development workflows.',
+        type: 'VIDEO',
+        subject: 'Software Development',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/git-tutorial',
+        tags: ['git', 'version-control', 'software-development'],
+        isActive: true,
+      },
+      {
+        title: 'Scholarship Application Tips',
+        description: 'Guide on how to write compelling scholarship applications, personal statements, and recommendation requests.',
+        type: 'ARTICLE',
+        subject: 'Scholarships',
+        level: 'UNIVERSITY',
+        url: 'https://example.com/scholarship-tips',
+        tags: ['scholarships', 'applications', 'essays'],
+        isActive: true,
+      },
+    ],
+    skipDuplicates: true,
   });
 
   const users = await Promise.all([
@@ -2922,11 +3994,19 @@ async function main() {
     },
   });
 
-  // Get follow count
+  // Get counts for summary
   const followCount = await prisma.follow.count();
   const activityCount = await prisma.activity.count();
   const partnerCount = await prisma.communityPartner.count();
   const partnerAppCount = await prisma.partnerApplication.count();
+  const studentGoalCount = await prisma.studentGoal.count();
+  const courseCount = await prisma.course.count();
+  const assignmentCount = await prisma.assignment.count();
+  const calendarEventCount = await prisma.academicCalendar.count();
+  const studySessionCount = await prisma.studySession.count();
+  const studyGroupCount = await prisma.studyGroup.count();
+  const scholarshipCount = await prisma.scholarship.count();
+  const academicResourceCount = await prisma.academicResource.count();
 
   console.log('✅ Seed completed successfully!');
   console.log('\n📊 Summary:');
@@ -2938,6 +4018,14 @@ async function main() {
   console.log(`   - ${activityCount} activities created`);
   console.log(`   - ${partnerCount} community partners created`);
   console.log(`   - ${partnerAppCount} partner applications created`);
+  console.log(`   - ${studentGoalCount} student goals created`);
+  console.log(`   - ${courseCount} courses created`);
+  console.log(`   - ${assignmentCount} assignments created`);
+  console.log(`   - ${calendarEventCount} academic calendar events created`);
+  console.log(`   - ${studySessionCount} study sessions created`);
+  console.log(`   - ${studyGroupCount} study groups created`);
+  console.log(`   - ${scholarshipCount} scholarships created`);
+  console.log(`   - ${academicResourceCount} academic resources created`);
   console.log('\n🔑 Test Credentials:');
   console.log('   Admin: admin@northernbox.ke / password123');
   console.log('   Moderator: moderator@northernbox.ke / password123');
