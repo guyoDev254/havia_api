@@ -80,7 +80,7 @@ export class AuthService {
     const token = this.generateToken(user.id, user.email);
 
     // Send verification email
-    await this.emailService.sendVerificationEmail(email, verificationToken);
+    await this.emailService.sendVerificationEmail(email, verificationToken, undefined, user.id);
 
     return {
       user,
@@ -172,7 +172,7 @@ export class AuthService {
     });
 
     // Send password reset email
-    await this.emailService.sendPasswordResetEmail(email, resetToken);
+    await this.emailService.sendPasswordResetEmail(email, resetToken, undefined, user.id);
 
     return {
       message: 'If an account exists with this email, a password reset link has been sent.',

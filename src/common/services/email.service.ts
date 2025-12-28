@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as sgMail from '@sendgrid/mail';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ScheduledEmailStatus, ScheduledEmailType } from '@prisma/client';
 
 @Injectable()
 export class EmailService {
@@ -8,7 +10,10 @@ export class EmailService {
   private isConfigured = false;
   private senderEmail: string | null = null;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private prisma: PrismaService,
+  ) {
     this.initializeSendGrid();
   }
 
@@ -76,9 +81,31 @@ export class EmailService {
     }
   }
 
-  async sendEmail(to: string, subject: string, html: string, text?: string): Promise<boolean> {
+  async sendEmail(
+    to: string,
+    subject: string,
+    html: string,
+    text?: string,
+    options?: {
+      type?: ScheduledEmailType;
+      recipientId?: string;
+      createdBy?: string;
+      metadata?: any;
+      priority?: number;
+    },
+  ): Promise<boolean> {
     if (!this.isConfigured || !this.senderEmail) {
       this.logger.warn('SendGrid not configured. Email not sent.');
+      // Store as failed even if not configured
+      await this.storeEmail(to, subject, html, text || this.stripHtml(html), {
+        status: ScheduledEmailStatus.FAILED,
+        type: options?.type || ScheduledEmailType.CUSTOM,
+        errorMessage: 'SendGrid not configured',
+        recipientId: options?.recipientId,
+        createdBy: options?.createdBy,
+        metadata: options?.metadata,
+        priority: options?.priority,
+      });
       return false;
     }
 
@@ -87,8 +114,28 @@ export class EmailService {
 
     if (!from || from === 'null' || !from.includes('@')) {
       this.logger.error(`Invalid sender email: ${from}. Email not sent.`);
+      // Store as failed
+      await this.storeEmail(to, subject, html, text || this.stripHtml(html), {
+        status: ScheduledEmailStatus.FAILED,
+        type: options?.type || ScheduledEmailType.CUSTOM,
+        errorMessage: `Invalid sender email: ${from}`,
+        recipientId: options?.recipientId,
+        createdBy: options?.createdBy,
+        metadata: options?.metadata,
+        priority: options?.priority,
+      });
       return false;
     }
+
+    // Store email before sending
+    const storedEmail = await this.storeEmail(to, subject, html, text || this.stripHtml(html), {
+      status: ScheduledEmailStatus.PENDING,
+      type: options?.type || ScheduledEmailType.CUSTOM,
+      recipientId: options?.recipientId,
+      createdBy: options?.createdBy,
+      metadata: options?.metadata,
+      priority: options?.priority,
+    });
 
     try {
       await sgMail.send({
@@ -99,14 +146,84 @@ export class EmailService {
         html,
       });
       this.logger.log(`Email sent successfully to ${to} from ${from}`);
+      
+      // Update stored email as sent
+      await this.prisma.scheduledEmail.update({
+        where: { id: storedEmail.id },
+        data: {
+          status: ScheduledEmailStatus.SENT,
+          sentAt: new Date(),
+        },
+      });
+      
       return true;
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Failed to send email to ${to}:`, error);
+      
+      // Update stored email as failed
+      await this.prisma.scheduledEmail.update({
+        where: { id: storedEmail.id },
+        data: {
+          status: ScheduledEmailStatus.FAILED,
+          failedAt: new Date(),
+          errorMessage: error?.message || 'Failed to send email',
+          retryCount: { increment: 1 },
+        },
+      });
+      
       return false;
     }
   }
 
-  async sendPasswordResetEmail(email: string, resetToken: string, resetUrl?: string) {
+  private async storeEmail(
+    recipientEmail: string,
+    subject: string,
+    body: string,
+    textBody: string,
+    options: {
+      status: ScheduledEmailStatus;
+      type: ScheduledEmailType;
+      recipientId?: string;
+      createdBy?: string;
+      metadata?: any;
+      priority?: number;
+      errorMessage?: string;
+    },
+  ) {
+    try {
+      return await this.prisma.scheduledEmail.create({
+        data: {
+          recipientEmail,
+          recipientId: options.recipientId || null,
+          subject,
+          body,
+          textBody,
+          status: options.status,
+          type: options.type,
+          priority: options.priority || 0,
+          scheduledFor: new Date(), // Send immediately
+          errorMessage: options.errorMessage || null,
+          metadata: options.metadata || null,
+          createdBy: options.createdBy || null,
+        },
+      });
+    } catch (error: any) {
+      this.logger.error('Failed to store email in scheduledEmails table:', error);
+      // Don't throw - we still want to send the email even if storing fails
+      // Return a dummy object so the calling code doesn't break
+      return {
+        id: 'store-failed',
+        update: async () => ({}),
+      } as any;
+    }
+  }
+
+  async sendPasswordResetEmail(
+    email: string,
+    resetToken: string,
+    resetUrl?: string,
+    recipientId?: string,
+  ) {
     const resetLink = resetUrl || `${this.configService.get<string>('FRONTEND_URL')}/reset-password?token=${resetToken}`;
     
     const html = `
@@ -135,10 +252,19 @@ export class EmailService {
       </html>
     `;
 
-    return this.sendEmail(email, 'Reset Your Password - NorthernBox', html);
+    return this.sendEmail(email, 'Reset Your Password - NorthernBox', html, undefined, {
+      type: ScheduledEmailType.PASSWORD_RESET,
+      recipientId,
+      metadata: { resetToken, resetLink },
+    });
   }
 
-  async sendVerificationEmail(email: string, verificationToken: string, verificationUrl?: string) {
+  async sendVerificationEmail(
+    email: string,
+    verificationToken: string,
+    verificationUrl?: string,
+    recipientId?: string,
+  ) {
     const verifyLink = verificationUrl ?? `${this.configService.get<string>('FRONTEND_URL')}/verify-email?token=${verificationToken}`;
     
     const html = `
@@ -167,7 +293,11 @@ export class EmailService {
       </html>
     `;
 
-    return this.sendEmail(email, 'Verify Your Email - NorthernBox', html);
+    return this.sendEmail(email, 'Verify Your Email - NorthernBox', html, undefined, {
+      type: ScheduledEmailType.VERIFICATION,
+      recipientId,
+      metadata: { verificationToken, verifyLink },
+    });
   }
 
   private stripHtml(html: string): string {

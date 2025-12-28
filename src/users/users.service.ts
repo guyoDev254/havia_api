@@ -219,7 +219,7 @@ export class UsersService {
     });
 
     // Send verification email
-    await this.emailService.sendVerificationEmail(user.email, verificationToken);
+    await this.emailService.sendVerificationEmail(user.email, verificationToken, undefined, userId);
 
     return {
       message: 'Verification email sent. Please check your inbox.',

@@ -263,6 +263,8 @@ model User {
   notifications            Notification[]
   sentMessages             Message[]                 @relation("SenderMessages")
   receivedMessages         Message[]                 @relation("ReceiverMessages")
+  scheduledEmails          ScheduledEmail[]          @relation("ScheduledEmails")
+  createdScheduledEmails   ScheduledEmail[]          @relation("CreatedScheduledEmails")
   mentorProfile            MentorProfile?
   menteeProfile            MenteeProfile?
   mentorMatches            MentorshipMatch[]         @relation("MentorMatches")
@@ -1419,8 +1421,8 @@ model StudyGroupPost {
   updatedAt    DateTime @updatedAt
 
   // Relations
-  studyGroup StudyGroup           @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
-  author     User                 @relation("StudyGroupPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  studyGroup StudyGroup               @relation(fields: [studyGroupId], references: [id], onDelete: Cascade)
+  author     User                     @relation("StudyGroupPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   comments   StudyGroupPostComment[]
   reactions  StudyGroupPostReaction[]
 
@@ -1451,11 +1453,11 @@ model StudyGroupPostComment {
 }
 
 model StudyGroupPostReaction {
-  id        String   @id @default(uuid())
+  id        String       @id @default(uuid())
   postId    String
   userId    String
   type      ReactionType @default(LIKE)
-  createdAt DateTime @default(now())
+  createdAt DateTime     @default(now())
 
   // Relations
   post StudyGroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -1793,4 +1795,58 @@ model PartnerProgram {
   @@index([partnerId])
   @@index([isActive])
   @@map("partner_programs")
+}
+
+enum ScheduledEmailStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum ScheduledEmailType {
+  VERIFICATION
+  PASSWORD_RESET
+  ANNOUNCEMENT
+  NOTIFICATION
+  WELCOME
+  EVENT_REMINDER
+  MENTORSHIP_UPDATE
+  CLUB_UPDATE
+  SYSTEM_ALERT
+  CUSTOM
+}
+
+model ScheduledEmail {
+  id             String               @id @default(uuid())
+  recipientEmail String
+  recipientId    String? // Optional user ID if recipient is a platform user
+  subject        String
+  body           String               @db.Text // HTML content
+  textBody       String?              @db.Text // Plain text version
+  status         ScheduledEmailStatus @default(PENDING)
+  type           ScheduledEmailType
+  priority       Int                  @default(0) // Higher number = higher priority
+  scheduledFor   DateTime // When the email should be sent
+  sentAt         DateTime?
+  failedAt       DateTime?
+  errorMessage   String?              @db.Text
+  retryCount     Int                  @default(0)
+  maxRetries     Int                  @default(3)
+  metadata       Json? // Additional data (template vars, context, etc.)
+  createdBy      String? // Admin/System user ID who created this
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  // Relations
+  recipient User? @relation("ScheduledEmails", fields: [recipientId], references: [id], onDelete: SetNull)
+  creator   User? @relation("CreatedScheduledEmails", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([type])
+  @@index([recipientEmail])
+  @@index([recipientId])
+  @@index([createdBy])
+  @@map("scheduled_emails")
 }
