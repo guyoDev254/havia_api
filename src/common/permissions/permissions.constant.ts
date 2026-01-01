@@ -184,7 +184,13 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   STUDENT: [], // Students have same permissions as regular members
   MENTOR: [],
   MENTEE: [],
-  CLUB_MANAGER: [],
+  CLUB_MANAGER: [
+    Permission.VIEW_USERS, // To view users for club management
+    Permission.MANAGE_CLUBS, // To manage their clubs
+    Permission.MANAGE_EVENTS, // To create and manage club events
+    Permission.SCHEDULE_EVENTS, // To schedule events
+    Permission.VIEW_ENGAGEMENT_METRICS, // To view club engagement
+  ],
 };
 
 // Helper function to check if a role has a permission
@@ -217,6 +223,7 @@ export function isAdminRole(role: UserRole): boolean {
     'SUPPORT_ADMIN',
     'ADMIN',
     'MODERATOR',
+    'CLUB_MANAGER', // Club managers can access admin panel for club/event management
   ].includes(role);
 }
 

@@ -424,6 +424,35 @@ async function main() {
     },
   });
 
+  // Create Mobile Tester User FIRST (before other users so we can reference it)
+  console.log('📱 Creating comprehensive mobile test user...');
+  const mobileTester = await prisma.user.create({
+    data: {
+      email: 'mobile@northernbox.ke',
+      phone: '+254700000000',
+      firstName: 'Mobile',
+      lastName: 'Tester',
+      password: hashedPassword,
+      role: 'STUDENT',
+      isStudent: true,
+      isEmailVerified: true,
+      bio: 'Comprehensive test user with access to all mobile app features - clubs, events, mentorship, student features, and more!',
+      location: 'Nairobi, Kenya',
+      skills: ['React Native', 'TypeScript', 'Node.js', 'UI/UX Design', 'Testing', 'Mentoring'],
+      interests: ['Mobile Development', 'Education', 'Mentorship', 'Community Building', 'Tech Innovation'],
+      education: 'BSc Software Engineering',
+      occupation: 'Mobile Developer & Student',
+      educationLevel: 'UNIVERSITY',
+      schoolName: 'University of Nairobi',
+      yearOfStudy: 3,
+      major: 'Software Engineering',
+      studentId: 'UON2022000',
+      expectedGraduation: new Date('2026-12-31'),
+      points: 850,
+      profileImage: 'https://res.cloudinary.com/dymlg8elg/image/upload/v1748800732/freepik__the-style-is-candid-image-photography-with-natural__98766_r9fvft.jpg',
+    },
+  });
+
   // Create Student Profiles
   console.log('📚 Creating student profiles...');
   
@@ -520,6 +549,35 @@ async function main() {
     },
   });
 
+  // Student Profile for Mobile Tester (comprehensive test user)
+  await prisma.studentProfile.create({
+    data: {
+      userId: mobileTester.id,
+      educationLevel: 'UNIVERSITY',
+      schoolName: 'University of Nairobi',
+      yearOfStudy: 3,
+      major: 'Software Engineering',
+      studentId: 'UON2022000',
+      expectedGraduation: new Date('2026-12-31'),
+      gpa: 3.9,
+      achievements: [
+        'Mobile App Development Excellence Award 2024',
+        'Best React Native Project - Tech Week 2024',
+        'Dean\'s List - All Semesters',
+        'Hackathon Winner - Nairobi Mobile Dev Challenge',
+        'Open Source Contributor - 50+ contributions',
+      ],
+      extracurriculars: [
+        'Mobile Development Club - President',
+        'Tech Mentorship Program - Mentor',
+        'University Tech Society - Active Member',
+        'Community Outreach - Volunteer',
+        'Hackathon Organizer',
+      ],
+      careerGoals: 'Become a senior mobile developer, build impactful apps, and mentor the next generation of developers',
+    },
+  });
+
   // ==================== STUDENT GOALS ====================
   console.log('🎯 Creating student goals...');
   
@@ -589,6 +647,29 @@ async function main() {
         description: 'Prepare and successfully defend master\'s thesis',
         status: 'IN_PROGRESS',
         targetDate: new Date('2025-05-30'),
+      },
+      // Mobile Tester Goals
+      {
+        userId: mobileTester.id,
+        title: 'Maintain 3.9+ GPA',
+        description: 'Keep excellent academic performance throughout the semester',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-12-31'),
+      },
+      {
+        userId: mobileTester.id,
+        title: 'Complete Mobile App Portfolio',
+        description: 'Build and publish 3 mobile apps showcasing different skills',
+        status: 'IN_PROGRESS',
+        targetDate: new Date('2025-06-30'),
+      },
+      {
+        userId: mobileTester.id,
+        title: 'Mentor 5 Students',
+        description: 'Help 5 students learn mobile development through mentorship',
+        status: 'COMPLETED',
+        targetDate: new Date('2024-12-31'),
+        completedAt: new Date('2024-11-15'),
       },
     ],
     skipDuplicates: true,
@@ -729,6 +810,69 @@ async function main() {
     },
   });
 
+  // Mobile Tester Courses
+  const mobile301 = await prisma.course.create({
+    data: {
+      userId: mobileTester.id,
+      courseCode: 'MOBILE301',
+      courseName: 'Advanced Mobile Development',
+      instructor: 'Dr. Sarah Kimani',
+      credits: 4,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  const mobile302 = await prisma.course.create({
+    data: {
+      userId: mobileTester.id,
+      courseCode: 'MOBILE302',
+      courseName: 'Mobile UI/UX Design',
+      instructor: 'Prof. James Ochieng',
+      credits: 3,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  const mobile303 = await prisma.course.create({
+    data: {
+      userId: mobileTester.id,
+      courseCode: 'MOBILE303',
+      courseName: 'Mobile App Architecture',
+      instructor: 'Dr. Mary Wanjiku',
+      credits: 4,
+      semester: 'FALL',
+      academicYear: academicYear,
+      status: 'ACTIVE',
+      startDate: semesterStart,
+      endDate: semesterEnd,
+    },
+  });
+
+  // Completed course from previous semester
+  const mobile201 = await prisma.course.create({
+    data: {
+      userId: mobileTester.id,
+      courseCode: 'MOBILE201',
+      courseName: 'React Native Fundamentals',
+      instructor: 'Dr. Peter Kariuki',
+      credits: 4,
+      semester: 'SPRING',
+      academicYear: `${currentYear - 1}/${currentYear}`,
+      status: 'COMPLETED',
+      startDate: new Date(currentYear - 1, 1, 1),
+      endDate: new Date(currentYear - 1, 5, 31),
+      finalGrade: 92.5,
+    },
+  });
+
   // Add grades to courses
   console.log('📊 Adding course grades...');
   
@@ -842,6 +986,47 @@ async function main() {
         maxGrade: 100,
         weight: 20,
         gradedAt: new Date(seedNow.getTime() - 14 * 24 * 60 * 60 * 1000),
+      },
+    ],
+  });
+
+  // Grades for Mobile Tester Courses
+  await prisma.courseGrade.createMany({
+    data: [
+      {
+        courseId: mobile301.id,
+        title: 'Project 1: Full-Stack Mobile App',
+        grade: 95,
+        maxGrade: 100,
+        weight: 25,
+        gradedAt: new Date(seedNow.getTime() - 20 * 24 * 60 * 60 * 1000),
+        notes: 'Excellent implementation with clean architecture',
+      },
+      {
+        courseId: mobile301.id,
+        title: 'Midterm Exam',
+        grade: 90,
+        maxGrade: 100,
+        weight: 30,
+        gradedAt: new Date(seedNow.getTime() - 15 * 24 * 60 * 60 * 1000),
+        notes: 'Strong understanding of mobile development concepts',
+      },
+      {
+        courseId: mobile302.id,
+        title: 'UI/UX Design Portfolio',
+        grade: 93,
+        maxGrade: 100,
+        weight: 30,
+        gradedAt: new Date(seedNow.getTime() - 18 * 24 * 60 * 60 * 1000),
+        notes: 'Creative and user-friendly designs',
+      },
+      {
+        courseId: mobile303.id,
+        title: 'Architecture Assignment',
+        grade: 91,
+        maxGrade: 100,
+        weight: 20,
+        gradedAt: new Date(seedNow.getTime() - 12 * 24 * 60 * 60 * 1000),
       },
     ],
   });
@@ -961,6 +1146,47 @@ async function main() {
         status: 'NOT_STARTED',
         dueDate: new Date(seedNow.getTime() - 2 * 24 * 60 * 60 * 1000),
         priority: 2,
+      },
+      // Mobile Tester Assignments
+      {
+        userId: mobileTester.id,
+        courseId: mobile301.id,
+        title: 'Build React Native Navigation App',
+        description: 'Create a complete app with stack and tab navigation, including authentication flow',
+        status: 'GRADED',
+        dueDate: new Date(seedNow.getTime() - 5 * 24 * 60 * 60 * 1000),
+        completedAt: new Date(seedNow.getTime() - 6 * 24 * 60 * 60 * 1000),
+        grade: 95,
+        maxGrade: 100,
+        priority: 3,
+      },
+      {
+        userId: mobileTester.id,
+        courseId: mobile302.id,
+        title: 'Design Mobile App UI/UX',
+        description: 'Create wireframes and high-fidelity designs for a mobile app',
+        status: 'IN_PROGRESS',
+        dueDate: new Date(seedNow.getTime() + 7 * 24 * 60 * 60 * 1000),
+        priority: 3,
+        notes: 'Working on final design iterations',
+      },
+      {
+        userId: mobileTester.id,
+        courseId: mobile303.id,
+        title: 'Architecture Documentation',
+        description: 'Document the architecture of a mobile app with diagrams and explanations',
+        status: 'NOT_STARTED',
+        dueDate: new Date(seedNow.getTime() + 14 * 24 * 60 * 60 * 1000),
+        priority: 2,
+      },
+      {
+        userId: mobileTester.id,
+        courseId: null,
+        title: 'Mentorship Session Preparation',
+        description: 'Prepare materials for upcoming mentorship session with mentees',
+        status: 'IN_PROGRESS',
+        dueDate: new Date(seedNow.getTime() + 2 * 24 * 60 * 60 * 1000),
+        priority: 3,
       },
     ],
     skipDuplicates: true,
@@ -1116,6 +1342,52 @@ async function main() {
         color: '#FD79A8',
         reminderAt: new Date(seedNow.getTime() + 32 * 24 * 60 * 60 * 1000),
       },
+      // Mobile Tester events
+      {
+        userId: mobileTester.id,
+        title: 'MOBILE301 Midterm Exam',
+        description: 'Midterm examination for Advanced Mobile Development',
+        eventType: 'EXAM',
+        startDate: new Date(seedNow.getTime() + 18 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 18 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Tech Building - Room 305',
+        color: '#FF6B6B',
+        reminderAt: new Date(seedNow.getTime() + 15 * 24 * 60 * 60 * 1000),
+      },
+      {
+        userId: mobileTester.id,
+        title: 'MOBILE302 Project Submission',
+        description: 'Submit UI/UX design portfolio project',
+        eventType: 'DEADLINE',
+        startDate: new Date(seedNow.getTime() + 7 * 24 * 60 * 60 * 1000),
+        isAllDay: true,
+        color: '#4ECDC4',
+        reminderAt: new Date(seedNow.getTime() + 4 * 24 * 60 * 60 * 1000),
+      },
+      {
+        userId: mobileTester.id,
+        title: 'Mentorship Session',
+        description: 'Weekly mentorship session with mentees',
+        eventType: 'OTHER',
+        startDate: new Date(seedNow.getTime() + 3 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 3 * 24 * 60 * 60 * 1000 + 1 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Online - Zoom',
+        color: '#45B7D1',
+        reminderAt: new Date(seedNow.getTime() + 2 * 24 * 60 * 60 * 1000),
+      },
+      {
+        userId: mobileTester.id,
+        title: 'Mobile Dev Club Meeting',
+        description: 'Monthly meeting of the Mobile Development Club',
+        eventType: 'OTHER',
+        startDate: new Date(seedNow.getTime() + 10 * 24 * 60 * 60 * 1000),
+        endDate: new Date(seedNow.getTime() + 10 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+        isAllDay: false,
+        location: 'Tech Hub - Room 101',
+        color: '#96CEB4',
+      },
     ],
     skipDuplicates: true,
   });
@@ -1196,6 +1468,30 @@ async function main() {
       endTime: endTime,
       duration: duration,
       notes: i % 5 === 0 ? `Research session - good progress` : null,
+    });
+  }
+
+  // Mobile Tester study sessions
+  for (let i = 1; i <= 20; i++) {
+    const daysAgo = i * 1.2;
+    const startTime = new Date(seedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    startTime.setHours(10 + (i % 5));
+    startTime.setMinutes(i % 2 === 0 ? 0 : 15);
+    
+    const duration = 90 + (i % 4) * 30; // 90, 120, 150, or 180 minutes
+    const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+    
+    const courseIds = [mobile301.id, mobile302.id, mobile303.id, null];
+    const subjects = ['React Native', 'Mobile UI/UX', 'App Architecture', 'State Management', 'Navigation', null];
+    
+    sessionData.push({
+      userId: mobileTester.id,
+      courseId: courseIds[i % courseIds.length],
+      subject: subjects[i % subjects.length],
+      startTime: startTime,
+      endTime: endTime,
+      duration: duration,
+      notes: i % 4 === 0 ? `Focused session - made great progress on ${subjects[i % subjects.length]}` : null,
     });
   }
 
@@ -1285,6 +1581,10 @@ async function main() {
       // Study Group 5 - ML
       { studyGroupId: studyGroup5.id, userId: graduateStudent.id, role: 'LEADER' },
       { studyGroupId: studyGroup5.id, userId: universityStudent1.id, role: 'MEMBER' },
+      // Mobile Tester - Member of multiple study groups
+      { studyGroupId: studyGroup1.id, userId: mobileTester.id, role: 'MEMBER' },
+      { studyGroupId: studyGroup2.id, userId: mobileTester.id, role: 'LEADER' },
+      { studyGroupId: studyGroup5.id, userId: mobileTester.id, role: 'MEMBER' },
     ],
     skipDuplicates: true,
   });
@@ -1446,6 +1746,12 @@ async function main() {
           scholarshipId: scholarships[4].id, // Graduate Research
           status: 'UNDER_REVIEW',
           notes: 'Research proposal on AI applications in healthcare submitted',
+        },
+        {
+          userId: mobileTester.id,
+          scholarshipId: scholarships[0].id, // Tech Scholarship
+          status: 'SUBMITTED',
+          notes: 'Applied for technology scholarship to support mobile development studies and mentorship work',
         },
       ],
       skipDuplicates: true,
@@ -1872,6 +2178,7 @@ async function main() {
     universityStudent1,
     universityStudent2,
     graduateStudent,
+    mobileTester, // Mobile test user with all features
     ...users,
   ];
   const memberUsers = users;
@@ -2125,6 +2432,13 @@ async function main() {
     { userId: users[15].id, clubId: leadershipClub.id, role: 'MEMBER' },
     { userId: users[16].id, clubId: techClub.id, role: 'MEMBER' },
     { userId: users[16].id, clubId: educationClub.id, role: 'MEMBER' },
+    // Mobile Tester - Member of ALL clubs
+    { userId: mobileTester.id, clubId: techClub.id, role: 'CO_LEAD' },
+    { userId: mobileTester.id, clubId: businessClub.id, role: 'MEMBER' },
+    { userId: mobileTester.id, clubId: creativeClub.id, role: 'MEMBER' },
+    { userId: mobileTester.id, clubId: healthClub.id, role: 'MEMBER' },
+    { userId: mobileTester.id, clubId: leadershipClub.id, role: 'MEMBER' },
+    { userId: mobileTester.id, clubId: educationClub.id, role: 'MEMBER' },
   ];
 
   await prisma.clubMember.createMany({
@@ -2132,11 +2446,16 @@ async function main() {
     skipDuplicates: true,
   });
 
-  // Create ClubManager assignments (admin dashboard “Managers” list)
+  // Create ClubManager assignments (admin dashboard "Managers" list)
   console.log('🛡️ Creating club managers (ClubManager)...');
   await prisma.clubManager.createMany({
     data: [
+      // Club manager managing multiple clubs
       { userId: clubManager.id, clubId: techClub.id, role: 'ADMIN', assignedBy: admin.id, isActive: true },
+      { userId: clubManager.id, clubId: businessClub.id, role: 'ADMIN', assignedBy: admin.id, isActive: true },
+      { userId: clubManager.id, clubId: healthClub.id, role: 'ADMIN', assignedBy: admin.id, isActive: true },
+      { userId: clubManager.id, clubId: educationClub.id, role: 'ADMIN', assignedBy: admin.id, isActive: true },
+      // Other managers
       { userId: moderator.id, clubId: businessClub.id, role: 'MODERATOR', assignedBy: admin.id, isActive: true },
       { userId: users[4].id, clubId: techClub.id, role: 'CO_LEAD', assignedBy: admin.id, isActive: true },
     ],
@@ -2454,6 +2773,34 @@ async function main() {
     },
   });
 
+  // Mobile Tester - RSVP to multiple events
+  await prisma.event.update({
+    where: { id: events[0].id }, // React Native Workshop
+    data: {
+      attendees: {
+        connect: [{ id: mobileTester.id }],
+      },
+    },
+  });
+
+  await prisma.event.update({
+    where: { id: events[1].id }, // Business Networking
+    data: {
+      attendees: {
+        connect: [{ id: mobileTester.id }],
+      },
+    },
+  });
+
+  await prisma.event.update({
+    where: { id: events[5].id }, // Coding Challenge
+    data: {
+      attendees: {
+        connect: [{ id: mobileTester.id }],
+      },
+    },
+  });
+
   // Create Badges
   console.log('🏆 Creating badges...');
   const badges = await Promise.all([
@@ -2531,6 +2878,14 @@ async function main() {
       { userId: admin.id, badgeId: badges[0].id },
       { userId: admin.id, badgeId: badges[5].id },
       { userId: admin.id, badgeId: badges[6].id },
+      // Mobile Tester - Has ALL badges
+      { userId: mobileTester.id, badgeId: badges[0].id },
+      { userId: mobileTester.id, badgeId: badges[1].id },
+      { userId: mobileTester.id, badgeId: badges[2].id },
+      { userId: mobileTester.id, badgeId: badges[3].id },
+      { userId: mobileTester.id, badgeId: badges[4].id },
+      { userId: mobileTester.id, badgeId: badges[5].id },
+      { userId: mobileTester.id, badgeId: badges[6].id },
     ],
     skipDuplicates: true,
   });
@@ -2583,6 +2938,21 @@ async function main() {
         isActive: true,
         rating: 4.5,
       },
+      // Mobile Tester as Mentor
+      {
+        userId: mobileTester.id,
+        bio: 'Experienced mobile developer mentoring students in React Native and mobile app development',
+        company: 'NorthernBox',
+        yearsOfExperience: 4,
+        mentorshipThemes: ['TECH', 'CAREER', 'LEADERSHIP'],
+        mentorshipStyle: ['LIVE_SESSIONS', 'ASYNCHRONOUS'],
+        weeklyAvailability: 5,
+        maxMentees: 6,
+        currentMentees: 2,
+        isVerified: true,
+        isActive: true,
+        rating: 4.8,
+      },
     ],
     skipDuplicates: true,
   });
@@ -2623,6 +2993,18 @@ async function main() {
         commitmentAgreed: true,
         isActive: true,
       } as any,
+      // Mobile Tester as Mentee
+      {
+        userId: mobileTester.id,
+        fieldOfInterest: 'Mobile Development & Leadership',
+        experienceLevel: 'Intermediate',
+        careerGoals: 'Become a senior mobile developer and tech lead, build impactful apps, and mentor others',
+        challenges: 'Scaling apps, team leadership, and advanced architecture patterns',
+        learningPreference: ['live', 'tasks', 'chat'],
+        availability: { days: ['Mon', 'Wed', 'Fri'], timeBlocks: ['18:00-20:00'] } as any,
+        commitmentAgreed: true,
+        isActive: true,
+      } as any,
     ],
     skipDuplicates: true,
   });
@@ -2655,6 +3037,8 @@ async function main() {
       { cycleId: cycle.id, userId: users[4].id, role: 'MENTOR', status: 'INTERESTED' },
       { cycleId: cycle.id, userId: users[5].id, role: 'MENTEE', status: 'INTERESTED' },
       { cycleId: cycle.id, userId: users[0].id, role: 'MENTEE', status: 'INTERESTED' },
+      { cycleId: cycle.id, userId: mobileTester.id, role: 'MENTOR', status: 'INTERESTED' },
+      { cycleId: cycle.id, userId: mobileTester.id, role: 'MENTEE', status: 'INTERESTED' },
     ] as any,
     skipDuplicates: true,
   });
@@ -3423,6 +3807,43 @@ async function main() {
         followingId: users[16].id, // Ali
       },
     }),
+    // Mobile Tester - Follows many users and is followed by many
+    prisma.follow.create({
+      data: {
+        followerId: mobileTester.id,
+        followingId: users[0].id, // Guyo
+      },
+    }),
+    prisma.follow.create({
+      data: {
+        followerId: mobileTester.id,
+        followingId: users[4].id, // Ibrahim
+      },
+    }),
+    prisma.follow.create({
+      data: {
+        followerId: mobileTester.id,
+        followingId: admin.id,
+      },
+    }),
+    prisma.follow.create({
+      data: {
+        followerId: users[0].id, // Guyo
+        followingId: mobileTester.id,
+      },
+    }),
+    prisma.follow.create({
+      data: {
+        followerId: users[4].id, // Ibrahim
+        followingId: mobileTester.id,
+      },
+    }),
+    prisma.follow.create({
+      data: {
+        followerId: users[5].id, // Amina
+        followingId: mobileTester.id,
+      },
+    }),
   ]);
 
   // Create Activities
@@ -3667,6 +4088,72 @@ async function main() {
         createdAt: new Date(now.getTime() - 5 * 60 * 1000),
       },
     }),
+    // Mobile Tester Activities - Comprehensive activity feed
+    prisma.activity.create({
+      data: {
+        userId: mobileTester.id,
+        type: 'CLUB_JOINED',
+        title: 'Joined a club',
+        description: 'Became a member of Northern Tech Hub',
+        link: `/clubs/${techClub.id}`,
+        clubId: techClub.id,
+        createdAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+      },
+    }),
+    prisma.activity.create({
+      data: {
+        userId: mobileTester.id,
+        type: 'EVENT_RSVP',
+        title: 'RSVPed to an event',
+        description: 'Registered for React Native Workshop',
+        link: `/events/${events[0].id}`,
+        eventId: events[0].id,
+        createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
+      },
+    }),
+    prisma.activity.create({
+      data: {
+        userId: mobileTester.id,
+        type: 'BADGE_EARNED',
+        title: 'Earned a badge',
+        description: 'Congratulations! You earned the Tech Enthusiast badge',
+        link: '/profile',
+        badgeId: badges[3].id,
+        createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+      },
+    }),
+    prisma.activity.create({
+      data: {
+        userId: mobileTester.id,
+        type: 'MENTORSHIP_STARTED',
+        title: 'Started a mentorship',
+        description: 'Began mentoring students in mobile development',
+        link: '/mentorship',
+        createdAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000),
+      },
+    }),
+    prisma.activity.create({
+      data: {
+        userId: mobileTester.id,
+        type: 'CLUB_JOINED',
+        title: 'Joined a club',
+        description: 'Became a member of Learning Circle',
+        link: `/clubs/${educationClub.id}`,
+        clubId: educationClub.id,
+        createdAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+      },
+    }),
+    prisma.activity.create({
+      data: {
+        userId: mobileTester.id,
+        type: 'EVENT_RSVP',
+        title: 'RSVPed to an event',
+        description: 'Registered for Coding Challenge: Build a Portfolio',
+        link: `/events/${events[5].id}`,
+        eventId: events[5].id,
+        createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
+      },
+    }),
   ]);
 
   // Create Notifications
@@ -3718,6 +4205,57 @@ async function main() {
         type: 'SYSTEM_ANNOUNCEMENT',
         link: '/',
         isRead: true,
+      },
+    }),
+    // Mobile Tester Notifications
+    prisma.notification.create({
+      data: {
+        userId: mobileTester.id,
+        title: 'New Event: React Native Workshop',
+        message: 'A new workshop on React Native has been scheduled. Don\'t forget to RSVP!',
+        type: 'EVENT_REMINDER',
+        link: `/events/${events[0].id}`,
+        isRead: false,
+      },
+    }),
+    prisma.notification.create({
+      data: {
+        userId: mobileTester.id,
+        title: 'Mentorship Request Accepted',
+        message: 'Your mentorship request has been accepted. Your first session is scheduled!',
+        type: 'MENTORSHIP_REQUEST',
+        link: '/mentorship',
+        isRead: true,
+      },
+    }),
+    prisma.notification.create({
+      data: {
+        userId: mobileTester.id,
+        title: 'Badge Earned: Tech Enthusiast',
+        message: 'Congratulations! You\'ve earned the Tech Enthusiast badge.',
+        type: 'BADGE_EARNED',
+        link: '/profile',
+        isRead: true,
+      },
+    }),
+    prisma.notification.create({
+      data: {
+        userId: mobileTester.id,
+        title: 'New Member Joined',
+        message: 'A new member has joined the Northern Tech Hub club!',
+        type: 'CLUB_UPDATE',
+        link: `/clubs/${techClub.id}`,
+        isRead: false,
+      },
+    }),
+    prisma.notification.create({
+      data: {
+        userId: mobileTester.id,
+        title: 'Assignment Due Soon',
+        message: 'Your MOBILE302 Project Submission is due in 7 days.',
+        type: 'SYSTEM_ANNOUNCEMENT',
+        link: '/assignments',
+        isRead: false,
       },
     }),
   ]);
@@ -4037,6 +4575,7 @@ async function main() {
   console.log('   Mentee: mentee@northernbox.ke / password123');
   console.log('   Member: guyo@northernbox.ke / password123');
   console.log('   Student: student.university1@northernbox.ke / password123');
+  console.log('   Mobile Tester (ALL FEATURES): mobile@northernbox.ke / password123');
   console.log('\n🤝 Community Partners:');
   console.log('   - Tech Youth Academy (APPROVED)');
   console.log('   - NextGen Leaders Initiative (APPROVED)');

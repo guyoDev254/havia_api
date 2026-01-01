@@ -749,7 +749,7 @@ export class ClubsService {
       throw new NotFoundException('User not found');
     }
 
-    // Check if already a manager
+    // Check if already a manager of this club
     const existingManager = await this.prisma.clubManager.findUnique({
       where: {
         userId_clubId: {
@@ -763,7 +763,7 @@ export class ClubsService {
       throw new BadRequestException('User is already a manager of this club');
     }
 
-    // Create club manager
+    // Create club manager (managers can now manage multiple clubs)
     const clubManager = await this.prisma.clubManager.create({
       data: {
         userId,

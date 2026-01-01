@@ -14,7 +14,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiConsumes, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -53,11 +53,12 @@ export class UsersController {
     return this.usersService.searchUsers(query, limit ? parseInt(limit) : 20, user.id);
   }
 
-  @Get('verify-email')
-  @ApiOperation({ summary: 'Verify email with token' })
-  @ApiQuery({ name: 'token', required: true })
-  async verifyEmail(@Query('token') token: string) {
-    return this.usersService.verifyEmail(token);
+  @Post('verify-email')
+  @ApiOperation({ summary: 'Verify email with OTP code' })
+  @ApiResponse({ status: 200, description: 'Email verified successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired OTP code' })
+  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
+    return this.usersService.verifyEmail(verifyEmailDto.otp, verifyEmailDto.email);
   }
 
   @Get(':id')

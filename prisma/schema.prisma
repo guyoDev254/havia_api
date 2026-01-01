@@ -109,6 +109,31 @@ enum EventStatus {
   CANCELLED
 }
 
+enum EventSource {
+  PLATFORM // Created by NorthernBox / Admin
+  CLUB // Created by Club Admin
+}
+
+enum EventLocationType {
+  ONLINE
+  PHYSICAL
+  HYBRID
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  TIMEOUT
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  PENDING // Awaiting payment confirmation
+  CONFIRMED // Payment successful or free event
+  CANCELLED // User cancelled or payment failed
+}
+
 enum MentorshipStatus {
   PENDING
   ACTIVE
@@ -214,97 +239,111 @@ enum ReactionType {
 }
 
 model User {
-  id                       String          @id @default(uuid())
-  email                    String          @unique
-  phone                    String?         @unique
-  password                 String
-  firstName                String
-  lastName                 String
-  bio                      String?
-  profileImage             String?
-  location                 String?
-  skills                   String[]
-  interests                String[]
-  education                String?
-  occupation               String?
+  id                          String          @id @default(uuid())
+  email                       String          @unique
+  phone                       String?         @unique
+  password                    String
+  firstName                   String
+  lastName                    String
+  bio                         String?
+  profileImage                String?
+  location                    String?
+  skills                      String[]
+  interests                   String[]
+  education                   String?
+  occupation                  String?
   // Student-specific fields
-  isStudent                Boolean         @default(false)
-  educationLevel           EducationLevel?
-  schoolName               String? // High school or university name
-  grade                    String? // For high school: Form 1-4, Grade 9-12, etc.
-  yearOfStudy              Int? // For university: 1st year, 2nd year, etc.
-  major                    String? // University major/course
-  expectedGraduation       DateTime? // Expected graduation date
-  studentId                String? // Student ID number
-  role                     UserRole        @default(MEMBER)
-  isActive                 Boolean         @default(true)
-  isEmailVerified          Boolean         @default(false)
-  emailVerificationToken   String?
-  resetPasswordToken       String?
-  resetPasswordExpires     DateTime?
-  expoPushToken            String? // Expo push notification token
-  pushNotificationsEnabled Boolean         @default(true) // User preference for push notifications
-  points                   Int             @default(0)
+  isStudent                   Boolean         @default(false)
+  educationLevel              EducationLevel?
+  schoolName                  String? // High school or university name
+  grade                       String? // For high school: Form 1-4, Grade 9-12, etc.
+  yearOfStudy                 Int? // For university: 1st year, 2nd year, etc.
+  major                       String? // University major/course
+  expectedGraduation          DateTime? // Expected graduation date
+  studentId                   String? // Student ID number
+  role                        UserRole        @default(MEMBER)
+  isActive                    Boolean         @default(true)
+  isEmailVerified             Boolean         @default(false)
+  emailVerificationToken      String? // Deprecated: kept for backward compatibility
+  emailVerificationOtp        String? // 6-digit OTP code
+  emailVerificationOtpExpires DateTime? // OTP expiration time (15 minutes)
+  resetPasswordToken          String?
+  resetPasswordExpires        DateTime?
+  expoPushToken               String? // Expo push notification token
+  pushNotificationsEnabled    Boolean         @default(true) // User preference for push notifications
+  points                      Int             @default(0)
   // Moderation & Strikes
-  strikeCount              Int             @default(0) // Number of strikes (0-3)
-  isPostingRestricted      Boolean         @default(false) // Auto-restricted from posting after 3 strikes
-  lastStrikeAt             DateTime? // When last strike was issued
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  strikeCount                 Int             @default(0) // Number of strikes (0-3)
+  isPostingRestricted         Boolean         @default(false) // Auto-restricted from posting after 3 strikes
+  lastStrikeAt                DateTime? // When last strike was issued
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
 
   // Relations
-  clubs                    Club[]                    @relation("UserClubs")
-  managedClubs             ClubManager[]
-  organizedEvents          Event[]
-  attendedEvents           Event[]                   @relation("EventAttendees")
-  mentorSessions           Mentorship[]              @relation("MentorSessions")
-  menteeSessions           Mentorship[]              @relation("MenteeSessions")
-  userBadges               UserBadge[]               @relation("UserBadges")
-  notifications            Notification[]
-  sentMessages             Message[]                 @relation("SenderMessages")
-  receivedMessages         Message[]                 @relation("ReceiverMessages")
-  scheduledEmails          ScheduledEmail[]          @relation("ScheduledEmails")
-  createdScheduledEmails   ScheduledEmail[]          @relation("CreatedScheduledEmails")
-  mentorProfile            MentorProfile?
-  menteeProfile            MenteeProfile?
-  mentorMatches            MentorshipMatch[]         @relation("MentorMatches")
-  menteeMatches            MentorshipMatch[]         @relation("MenteeMatches")
-  mentorshipCycleInterests MentorshipCycleInterest[]
-  following                Follow[]                  @relation("UserFollowing")
+  clubs                      Club[]                      @relation("UserClubs")
+  managedClubs               ClubManager[]
+  organizedEvents            Event[]                     @relation("EventOrganizers")
+  attendedEvents             Event[]                     @relation("EventAttendees")
+  eventRegistrations         EventRegistration[]         @relation("EventRegistrations")
+  mentorSessions             Mentorship[]                @relation("MentorSessions")
+  menteeSessions             Mentorship[]                @relation("MenteeSessions")
+  userBadges                 UserBadge[]                 @relation("UserBadges")
+  notifications              Notification[]
+  sentMessages               Message[]                   @relation("SenderMessages")
+  receivedMessages           Message[]                   @relation("ReceiverMessages")
+  scheduledEmails            ScheduledEmail[]            @relation("ScheduledEmails")
+  createdScheduledEmails     ScheduledEmail[]            @relation("CreatedScheduledEmails")
+  mentorProfile              MentorProfile?
+  menteeProfile              MenteeProfile?
+  mentorMatches              MentorshipMatch[]           @relation("MentorMatches")
+  menteeMatches              MentorshipMatch[]           @relation("MenteeMatches")
+  mentorshipCycleInterests   MentorshipCycleInterest[]
+  following                  Follow[]                    @relation("UserFollowing")
   // Community Partners
-  ownedPartners            CommunityPartner[]        @relation("PartnerOwners")
-  partnerAdmins            PartnerAdmin[]            @relation("PartnerAdmins")
-  partnerMembers           PartnerMember[]           @relation("PartnerMembers")
-  partnerMemberRequests    PartnerMemberRequest[]    @relation("PartnerMemberRequests")
-  partnerApplications      PartnerApplication[]      @relation("PartnerApplications")
-  followers                Follow[]                  @relation("UserFollowers")
-  activities               Activity[]
-  posts                    Post[]                    @relation("UserPosts")
-  comments                 Comment[]                 @relation("UserComments")
-  postReactions            PostReaction[]            @relation("UserPostReactions")
-  adminAuditLogs           AuditLog[]                @relation("AdminAuditLogs")
-  userAuditLogs            AuditLog[]                @relation("UserAuditLogs")
-  ledClubs                 Club[]                    @relation("ClubLeads")
-  studentProfile           StudentProfile?
-  studentGoals             StudentGoal[]
-  scholarshipApplications  ScholarshipApplication[]
-  studyGroupMembers        StudyGroupMember[]
-  studyGroupPosts          StudyGroupPost[]          @relation("StudyGroupPostAuthor")
-  studyGroupPostComments   StudyGroupPostComment[]   @relation("StudyGroupPostCommentAuthor")
-  studyGroupPostReactions  StudyGroupPostReaction[]  @relation("StudyGroupPostReactionUser")
-  studyGroupMeetupsCreated StudyGroupMeetup[]        @relation("StudyGroupMeetupCreator")
-  studyGroupMeetupRSVPs    StudyGroupMeetupRSVP[]    @relation("StudyGroupMeetupRSVPUser")
-  courses                  Course[]                  @relation("UserCourses")
-  assignments              Assignment[]              @relation("UserAssignments")
-  academicCalendarEvents   AcademicCalendar[]        @relation("UserAcademicCalendar")
-  studySessions            StudySession[]            @relation("UserStudySessions")
-  createdClubs             Club[]                    @relation("ClubCreators")
-  clubMemberships          ClubMember[]              @relation("ClubMemberships")
-  clubProgramsCreated      ClubProgram[]             @relation("ClubProgramCreators")
-  clubProgramParticipants  ClubProgramParticipant[]  @relation("ClubProgramParticipants")
-  clubResourcesCreated     ClubResource[]            @relation("ClubResourceCreators")
-  reportsFiled             Report[]                  @relation("ReporterReports")
-  reportsAgainst           Report[]                  @relation("ReportedUserReports")
+  ownedPartners              CommunityPartner[]          @relation("PartnerOwners")
+  partnerAdmins              PartnerAdmin[]              @relation("PartnerAdmins")
+  partnerMembers             PartnerMember[]             @relation("PartnerMembers")
+  partnerMemberRequests      PartnerMemberRequest[]      @relation("PartnerMemberRequests")
+  partnerApplications        PartnerApplication[]        @relation("PartnerApplications")
+  followers                  Follow[]                    @relation("UserFollowers")
+  activities                 Activity[]
+  posts                      Post[]                      @relation("UserPosts")
+  comments                   Comment[]                   @relation("UserComments")
+  postReactions              PostReaction[]              @relation("UserPostReactions")
+  adminAuditLogs             AuditLog[]                  @relation("AdminAuditLogs")
+  userAuditLogs              AuditLog[]                  @relation("UserAuditLogs")
+  ledClubs                   Club[]                      @relation("ClubLeads")
+  studentProfile             StudentProfile?
+  studentGoals               StudentGoal[]
+  scholarshipApplications    ScholarshipApplication[]
+  studyGroupMembers          StudyGroupMember[]
+  studyGroupPosts            StudyGroupPost[]            @relation("StudyGroupPostAuthor")
+  studyGroupPostComments     StudyGroupPostComment[]     @relation("StudyGroupPostCommentAuthor")
+  studyGroupPostReactions    StudyGroupPostReaction[]    @relation("StudyGroupPostReactionUser")
+  studyGroupMeetupsCreated   StudyGroupMeetup[]          @relation("StudyGroupMeetupCreator")
+  studyGroupMeetupRSVPs      StudyGroupMeetupRSVP[]      @relation("StudyGroupMeetupRSVPUser")
+  courses                    Course[]                    @relation("UserCourses")
+  assignments                Assignment[]                @relation("UserAssignments")
+  academicCalendarEvents     AcademicCalendar[]          @relation("UserAcademicCalendar")
+  studySessions              StudySession[]              @relation("UserStudySessions")
+  createdClubs               Club[]                      @relation("ClubCreators")
+  clubMemberships            ClubMember[]                @relation("ClubMemberships")
+  clubProgramsCreated        ClubProgram[]               @relation("ClubProgramCreators")
+  clubProgramParticipants    ClubProgramParticipant[]    @relation("ClubProgramParticipants")
+  clubResourcesCreated       ClubResource[]              @relation("ClubResourceCreators")
+  reportsFiled               Report[]                    @relation("ReporterReports")
+  reportsAgainst             Report[]                    @relation("ReportedUserReports")
+  // New club feature relations
+  clubFeedsCreated           ClubFeed[]                  @relation("ClubFeedAuthors")
+  clubFeedComments           ClubFeedComment[]           @relation("ClubFeedCommentAuthors")
+  clubFeedReactions          ClubFeedReaction[]          @relation("ClubFeedReactionUsers")
+  clubPollVotes              ClubPollVote[]              @relation("ClubPollVoteUsers")
+  clubContributions          ClubContribution[]          @relation("ClubContributors")
+  clubFundraisingCreated     ClubFundraising[]           @relation("ClubFundraisingCreators")
+  clubProjectsCreated        ClubProject[]               @relation("ClubProjectCreators")
+  clubAttendance             ClubAttendance[]            @relation("ClubAttendanceUsers")
+  clubFinancialContributions ClubFinancialContribution[] @relation("ClubFinancialContributors")
+  clubReportsCreated         ClubReport[]                @relation("ClubReportCreators")
 
   @@map("users")
 }
@@ -349,15 +388,23 @@ model Club {
   updatedAt DateTime @updatedAt
 
   // Relations
-  members     User[]         @relation("UserClubs")
-  managers    ClubManager[]
-  memberships ClubMember[]   @relation("ClubMemberships")
-  events      Event[]
-  posts       Post[]         @relation("ClubPosts")
-  programs    ClubProgram[]
-  resources   ClubResource[]
-  lead        User?          @relation("ClubLeads", fields: [leadId], references: [id])
-  creator     User           @relation("ClubCreators", fields: [createdBy], references: [id])
+  members                User[]                      @relation("UserClubs")
+  managers               ClubManager[]
+  memberships            ClubMember[]                @relation("ClubMemberships")
+  events                 Event[]                     @relation("ClubEvents")
+  posts                  Post[]                      @relation("ClubPosts")
+  programs               ClubProgram[]
+  resources              ClubResource[]
+  lead                   User?                       @relation("ClubLeads", fields: [leadId], references: [id])
+  creator                User                        @relation("ClubCreators", fields: [createdBy], references: [id])
+  // New club feature relations
+  feeds                  ClubFeed[]                  @relation("ClubFeeds")
+  contributions          ClubContribution[]          @relation("ClubContributions")
+  fundraising            ClubFundraising[]           @relation("ClubFundraising")
+  projects               ClubProject[]               @relation("ClubProjects")
+  attendance             ClubAttendance[]            @relation("ClubAttendance")
+  financialContributions ClubFinancialContribution[] @relation("ClubFinancialContributions")
+  reports                ClubReport[]                @relation("ClubReports")
 
   @@index([status])
   @@index([type])
@@ -366,6 +413,7 @@ model Club {
   @@map("clubs")
 }
 
+// Business Rule: Managers can manage multiple clubs
 model ClubManager {
   id         String   @id @default(uuid())
   userId     String
@@ -383,6 +431,7 @@ model ClubManager {
 
   @@unique([userId, clubId])
   @@index([clubId, role])
+  @@index([userId, isActive]) // Index for efficient lookup of active managers per user
   @@map("club_managers")
 }
 
@@ -541,6 +590,355 @@ model ClubResource {
   @@index([isPinned])
   @@index([createdAt])
   @@map("club_resources")
+}
+
+// Club Feeds (Announcements, Discussions, Polls)
+enum ClubFeedType {
+  ANNOUNCEMENT
+  DISCUSSION
+  POLL
+}
+
+enum PollOptionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+}
+
+model ClubFeed {
+  id       String       @id @default(uuid())
+  clubId   String
+  type     ClubFeedType @default(ANNOUNCEMENT)
+  title    String
+  content  String       @db.Text
+  authorId String
+  isPinned Boolean      @default(false)
+  isPublic Boolean      @default(true) // Public to all or members only
+
+  // Poll-specific fields
+  pollOptions String[] // Array of poll option texts
+  pollType    PollOptionType? // SINGLE_CHOICE or MULTIPLE_CHOICE
+  pollEndDate DateTime? // When poll closes
+
+  // Engagement
+  viewCount     Int @default(0)
+  commentCount  Int @default(0)
+  reactionCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  club      Club               @relation("ClubFeeds", fields: [clubId], references: [id], onDelete: Cascade)
+  author    User               @relation("ClubFeedAuthors", fields: [authorId], references: [id])
+  comments  ClubFeedComment[]
+  reactions ClubFeedReaction[]
+  pollVotes ClubPollVote[]
+
+  @@index([clubId])
+  @@index([type])
+  @@index([isPinned])
+  @@index([createdAt])
+  @@map("club_feeds")
+}
+
+model ClubFeedComment {
+  id        String   @id @default(uuid())
+  feedId    String
+  userId    String
+  content   String   @db.Text
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  feed ClubFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  user User     @relation("ClubFeedCommentAuthors", fields: [userId], references: [id])
+
+  @@index([feedId])
+  @@index([userId])
+  @@map("club_feed_comments")
+}
+
+model ClubFeedReaction {
+  id        String       @id @default(uuid())
+  feedId    String
+  userId    String
+  type      ReactionType @default(LIKE)
+  createdAt DateTime     @default(now())
+
+  feed ClubFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  user User     @relation("ClubFeedReactionUsers", fields: [userId], references: [id])
+
+  @@unique([feedId, userId])
+  @@index([feedId])
+  @@map("club_feed_reactions")
+}
+
+model ClubPollVote {
+  id          String   @id @default(uuid())
+  feedId      String
+  userId      String
+  optionIndex Int // Index of the selected option(s)
+  createdAt   DateTime @default(now())
+
+  feed ClubFeed @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  user User     @relation("ClubPollVoteUsers", fields: [userId], references: [id])
+
+  @@unique([feedId, userId, optionIndex])
+  @@index([feedId])
+  @@map("club_poll_votes")
+}
+
+// Club Contributions (Volunteer, Donations, Support)
+enum ContributionType {
+  VOLUNTEER
+  DONATION
+  SUPPORT // General support (time, skills, resources)
+}
+
+enum ContributionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model ClubContribution {
+  id            String             @id @default(uuid())
+  clubId        String
+  contributorId String? // null for anonymous contributions
+  type          ContributionType
+  status        ContributionStatus @default(PENDING)
+
+  // Contribution details
+  title       String
+  description String?  @db.Text
+  amount      Float? // For donations
+  currency    String?  @default("KES")
+  hours       Float? // For volunteer time
+  skills      String[] // Skills offered
+  resources   String[] // Resources provided
+
+  // Approval
+  approvedBy      String? // Club admin who approved
+  approvedAt      DateTime?
+  rejectedBy      String?
+  rejectedAt      DateTime?
+  rejectionReason String?   @db.Text
+
+  // Tracking
+  completedAt DateTime?
+  notes       String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  club        Club  @relation("ClubContributions", fields: [clubId], references: [id], onDelete: Cascade)
+  contributor User? @relation("ClubContributors", fields: [contributorId], references: [id], onDelete: SetNull)
+
+  @@index([clubId])
+  @@index([type])
+  @@index([status])
+  @@index([contributorId])
+  @@map("club_contributions")
+}
+
+// Club Fundraising Campaigns
+enum FundraisingStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+model ClubFundraising {
+  id            String            @id @default(uuid())
+  clubId        String
+  title         String
+  description   String            @db.Text
+  goalAmount    Float
+  currency      String            @default("KES")
+  currentAmount Float             @default(0)
+  status        FundraisingStatus @default(DRAFT)
+
+  // Campaign details
+  startDate   DateTime?
+  endDate     DateTime?
+  image       String?
+  paymentLink String? // Payment integration link
+
+  // Templates
+  templateType String? // e.g., "PROJECT_FUNDING", "OPERATIONAL", "EMERGENCY"
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  club          Club                        @relation("ClubFundraising", fields: [clubId], references: [id], onDelete: Cascade)
+  creator       User                        @relation("ClubFundraisingCreators", fields: [createdBy], references: [id])
+  contributions ClubFinancialContribution[]
+
+  @@index([clubId])
+  @@index([status])
+  @@index([startDate])
+  @@map("club_fundraising")
+}
+
+// Club Projects
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model ClubProject {
+  id          String        @id @default(uuid())
+  clubId      String
+  title       String
+  description String        @db.Text
+  status      ProjectStatus @default(PLANNING)
+
+  // Project timeline
+  startDate DateTime?
+  endDate   DateTime?
+  budget    Float?
+  currency  String?   @default("KES")
+
+  // Template-based planning
+  templateType String? // e.g., "COMMUNITY_PROJECT", "TRAINING", "EVENT"
+  objectives   String[] // Project objectives
+  deliverables String[] // Expected deliverables
+
+  // Tracking
+  progress   Float @default(0) // 0-100
+  budgetUsed Float @default(0)
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  club       Club             @relation("ClubProjects", fields: [clubId], references: [id], onDelete: Cascade)
+  creator    User             @relation("ClubProjectCreators", fields: [createdBy], references: [id])
+  milestones ClubMilestone[]
+  attendance ClubAttendance[]
+
+  @@index([clubId])
+  @@index([status])
+  @@index([startDate])
+  @@map("club_projects")
+}
+
+model ClubMilestone {
+  id          String    @id @default(uuid())
+  projectId   String
+  title       String
+  description String?   @db.Text
+  targetDate  DateTime?
+  completedAt DateTime?
+  isCompleted Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project ClubProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([isCompleted])
+  @@map("club_milestones")
+}
+
+// Club Attendance Tracking
+model ClubAttendance {
+  id        String   @id @default(uuid())
+  clubId    String
+  projectId String? // Optional: link to project
+  eventId   String? // Optional: link to event
+  userId    String
+  date      DateTime
+  status    String   @default("PRESENT") // PRESENT, ABSENT, LATE, EXCUSED
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club    Club         @relation("ClubAttendance", fields: [clubId], references: [id], onDelete: Cascade)
+  project ClubProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  event   Event?       @relation("ClubAttendanceEvents", fields: [eventId], references: [id], onDelete: SetNull)
+  user    User         @relation("ClubAttendanceUsers", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, userId, date])
+  @@index([clubId])
+  @@index([userId])
+  @@index([date])
+  @@index([projectId])
+  @@index([eventId])
+  @@map("club_attendance")
+}
+
+// Club Financial Contributions
+model ClubFinancialContribution {
+  id               String   @id @default(uuid())
+  clubId           String
+  fundraisingId    String? // Optional: link to fundraising campaign
+  contributorId    String? // null for anonymous
+  amount           Float
+  currency         String   @default("KES")
+  paymentMethod    String? // e.g., "MPESA", "BANK_TRANSFER", "CASH", "ONLINE"
+  paymentReference String? // Payment reference/transaction ID
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  club        Club             @relation("ClubFinancialContributions", fields: [clubId], references: [id], onDelete: Cascade)
+  fundraising ClubFundraising? @relation(fields: [fundraisingId], references: [id], onDelete: SetNull)
+  contributor User?            @relation("ClubFinancialContributors", fields: [contributorId], references: [id], onDelete: SetNull)
+
+  @@index([clubId])
+  @@index([fundraisingId])
+  @@index([contributorId])
+  @@index([createdAt])
+  @@map("club_financial_contributions")
+}
+
+// Club Reports (Simple reports for funders/stakeholders)
+enum ClubReportType {
+  ACTIVITY_SUMMARY
+  FINANCIAL_SUMMARY
+  PROJECT_UPDATE
+  MEMBERSHIP_REPORT
+  CUSTOM
+}
+
+model ClubReport {
+  id          String         @id @default(uuid())
+  clubId      String
+  type        ClubReportType
+  title       String
+  content     String         @db.Text
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  // Report data (JSON for flexibility)
+  data Json? // Structured data for the report
+
+  // Template
+  templateType String? // e.g., "FUNDER_REPORT", "STAKEHOLDER_UPDATE"
+
+  createdBy String
+  isPublic  Boolean  @default(false) // Public to members or private
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club    Club @relation("ClubReports", fields: [clubId], references: [id], onDelete: Cascade)
+  creator User @relation("ClubReportCreators", fields: [createdBy], references: [id])
+
+  @@index([clubId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("club_reports")
 }
 
 // Community Partners (Replaces Clubs)
@@ -723,35 +1121,88 @@ model CommunityPartnerProgram {
 }
 
 model Event {
-  id           String      @id @default(uuid())
+  id           String            @id @default(uuid())
   title        String
-  description  String?     @db.Text
-  image        String?
-  type         EventType   @default(OTHER)
-  status       EventStatus @default(UPCOMING)
+  description  String?           @db.Text
+  image        String? // Square/thumbnail image
+  banner       String? // Wide banner image for event detail pages
+  type         EventType         @default(OTHER)
+  status       EventStatus       @default(UPCOMING)
+  source       EventSource       @default(PLATFORM) // PLATFORM or CLUB
+  locationType EventLocationType @default(PHYSICAL) // ONLINE, PHYSICAL, or HYBRID
   startDate    DateTime
   endDate      DateTime?
-  location     String?
-  isOnline     Boolean     @default(false)
-  onlineLink   String?
-  maxAttendees Int         @default(0)
+  registrationDeadline DateTime? // Deadline for registration
+  location     String? // Physical location (required if locationType is PHYSICAL or HYBRID)
+  isOnline     Boolean           @default(false) // Legacy field, kept for backward compatibility
+  onlineLink   String? // Online link (required if locationType is ONLINE or HYBRID)
+  maxAttendees Int               @default(0) // 0 = unlimited
+  capacity     Int? // Alias for maxAttendees, kept for backward compatibility
   organizerId  String
-  clubId       String?
+  clubId       String? // If source is CLUB, this is required
   partnerId    String? // Community Partner who created this event
-  isPaid       Boolean     @default(false) // Whether the event requires payment
-  price        Float? // Price in the default currency (null if free)
-  currency     String?     @default("KES") // Currency code (KES, USD, etc.)
-  paymentLink  String? // Payment link (e.g., M-Pesa, PayPal, Stripe)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  isPaid       Boolean           @default(false) // Whether the event requires payment
+  price        Float? // Price in the default currency (null if free, required if isPaid)
+  currency     String?           @default("KES") // Currency code (KES, USD, etc.)
+  paymentLink  String? // Legacy payment link (deprecated, use M-Pesa STK Push)
+  isPublic     Boolean           @default(true) // For club events: if false, only club members can see
+  tags         String[]          @default([]) // Event tags for categorization and search
+  speakers     String[]          @default([]) // Speaker names or IDs
+  agenda       String?           @db.Text // Event agenda/schedule
+  requirements String?           @db.Text // Requirements to attend (e.g., bring laptop, prerequisites)
+  contactEmail String? // Contact email for event inquiries
+  contactPhone String? // Contact phone for event inquiries
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   // Relations
-  organizer User              @relation(fields: [organizerId], references: [id])
-  club      Club?             @relation(fields: [clubId], references: [id])
-  partner   CommunityPartner? @relation("PartnerEvents", fields: [partnerId], references: [id])
-  attendees User[]            @relation("EventAttendees")
+  organizer     User                @relation("EventOrganizers", fields: [organizerId], references: [id])
+  club          Club?               @relation("ClubEvents", fields: [clubId], references: [id])
+  partner       CommunityPartner?   @relation("PartnerEvents", fields: [partnerId], references: [id])
+  attendees     User[]              @relation("EventAttendees")
+  attendance    ClubAttendance[]    @relation("ClubAttendanceEvents")
+  registrations EventRegistration[] // Detailed registration records with payment status
 
+  @@index([source])
+  @@index([clubId])
+  @@index([isPublic])
+  @@index([status])
+  @@index([startDate])
   @@map("events")
+}
+
+// Event Registration with Payment Tracking
+model EventRegistration {
+  id                 String             @id @default(uuid())
+  eventId            String
+  userId             String
+  quantity           Int                @default(1) // Number of tickets
+  status             RegistrationStatus @default(PENDING)
+  phoneNumber        String? // M-Pesa phone number (required for paid events)
+  paymentStatus      PaymentStatus? // Payment status for paid events
+  paymentReference   String? // M-Pesa transaction reference
+  paymentAmount      Float? // Amount paid (total for all tickets)
+  paymentCurrency    String?            @default("KES")
+  paymentDate        DateTime? // When payment was completed
+  mpesaRequestId     String? // M-Pesa STK Push request ID
+  mpesaCheckoutId    String? // M-Pesa checkout request ID
+  receiptNumber      String? // Generated receipt number
+  cancelledAt        DateTime?
+  cancellationReason String?            @db.Text
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Relations
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation("EventRegistrations", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId]) // One registration per user per event
+  @@index([eventId])
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([mpesaRequestId])
+  @@map("event_registrations")
 }
 
 model MentorProfile {
@@ -1253,16 +1704,6 @@ enum ResourceType {
   OTHER
 }
 
-enum ReportType {
-  SPAM
-  HARASSMENT
-  HATE_SPEECH
-  INAPPROPRIATE_CONTENT
-  FAKE_ACCOUNT
-  COPYRIGHT_VIOLATION
-  OTHER
-}
-
 enum ReportStatus {
   PENDING
   UNDER_REVIEW
@@ -1696,6 +2137,16 @@ model StudySession {
 }
 
 // Reports & Moderation
+enum ReportType {
+  SPAM
+  HARASSMENT
+  HATE_SPEECH
+  INAPPROPRIATE_CONTENT
+  FAKE_ACCOUNT
+  COPYRIGHT_VIOLATION
+  OTHER
+}
+
 model Report {
   id             String           @id @default(uuid())
   reporterId     String // User who filed the report

@@ -140,6 +140,15 @@ export class ClubsController {
     return this.clubsService.getManagedClubs(user.id);
   }
 
+  @Get('managed-by/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.MODERATOR, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get clubs managed by a specific user (Admin/Moderator only)' })
+  async getClubsManagedByUser(@Param('userId') userId: string) {
+    return this.clubsService.getManagedClubs(userId);
+  }
+
   @Get(':id/is-manager')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

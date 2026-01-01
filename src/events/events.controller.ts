@@ -14,22 +14,27 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get all events' })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all events (filtered by visibility rules)' })
   @ApiQuery({ name: 'status', required: false, enum: ['UPCOMING', 'ONGOING', 'COMPLETED', 'CANCELLED'] })
   @ApiQuery({ name: 'type', required: false, enum: ['WORKSHOP', 'MEETUP', 'CONFERENCE', 'WEBINAR', 'CHALLENGE', 'OTHER'] })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  async findAll(@Query() filters: any) {
+  async findAll(@CurrentUser() user: any, @Query() filters: any) {
     const parsedFilters = {
       ...filters,
       ...(filters.limit && { limit: parseInt(filters.limit) }),
+      userId: user?.id,
     };
     return this.eventsService.findAll(parsedFilters);
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get event by ID' })
-  async findOne(@Param('id') id: string) {
-    return this.eventsService.findOne(id);
+  async findOne(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.eventsService.findOne(id, user?.id);
   }
 
   @Post()
@@ -53,10 +58,22 @@ export class EventsController {
     return this.eventsService.createClubEvent(user.id, clubId, data, user.role);
   }
 
+  @Post(':id/register')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Register for an event (handles free and paid events with M-Pesa)' })
+  async register(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { phoneNumber?: string; quantity?: number },
+  ) {
+    return this.eventsService.register(user.id, id, body.phoneNumber, body.quantity || 1);
+  }
+
   @Post(':id/rsvp')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'RSVP to an event' })
+  @ApiOperation({ summary: 'RSVP to a free event (legacy endpoint, use /register for paid events)' })
   async rsvp(@CurrentUser() user: any, @Param('id') id: string) {
     return this.eventsService.rsvp(user.id, id);
   }

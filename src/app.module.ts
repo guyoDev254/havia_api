@@ -22,6 +22,7 @@ import { PartnershipsModule } from './partnerships/partnerships.module';
 import { CommunityPartnersModule } from './community-partners/community-partners.module';
 import { ContentModule } from './content/content.module';
 import { TasksModule } from './tasks/tasks.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { TasksModule } from './tasks/tasks.module';
     CommunityPartnersModule,
     ContentModule,
     TasksModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

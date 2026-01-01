@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Res,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -21,7 +22,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Permission } from '../common/permissions/permissions.constant';
+import { Permission, hasPermission, isAdminRole } from '../common/permissions/permissions.constant';
 import { UserRole } from '@prisma/client';
 
 @ApiTags('admin')
@@ -87,8 +88,24 @@ export class AdminController {
   }
 
   @Get('users/:id')
-  @ApiOperation({ summary: 'Get user by ID' })
-  async getUserById(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Get user by ID (users can view their own profile)' })
+  async getUserById(@CurrentUser() currentUser: any, @Param('id') id: string) {
+    if (!currentUser) {
+      throw new ForbiddenException('User not authenticated');
+    }
+
+    // Allow users to view their own profile without any additional permissions
+    // For viewing other users, admin role and VIEW_USERS permission is required
+    if (currentUser.id !== id) {
+      // Check if user has admin role
+      if (!isAdminRole(currentUser.role)) {
+        throw new ForbiddenException('Admin access required to view other users');
+      }
+      // Check if user has VIEW_USERS permission
+      if (!hasPermission(currentUser.role, Permission.VIEW_USERS)) {
+        throw new ForbiddenException('You can only view your own profile. VIEW_USERS permission required to view other users.');
+      }
+    }
     return this.adminService.getUserById(id);
   }
 
@@ -256,6 +273,7 @@ export class AdminController {
   @Get('clubs')
   @ApiOperation({ summary: 'Get all clubs (paginated)' })
   @ApiQuery({ name: 'status', required: false, enum: ['PENDING', 'ACTIVE', 'PILOT', 'FROZEN', 'ARCHIVED'] })
+  @RequirePermissions(Permission.MANAGE_CLUBS, Permission.VIEW_USERS)
   async getAllClubs(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -269,9 +287,11 @@ export class AdminController {
   }
 
   @Put('clubs/:id')
-  @ApiOperation({ summary: 'Update club' })
-  async updateClub(@Param('id') id: string, @Body() data: any) {
-    return this.adminService.updateClub(id, data);
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update club (admin or club manager)' })
+  async updateClub(@CurrentUser() user: any, @Param('id') id: string, @Body() data: any) {
+    return this.adminService.updateClub(id, data, user.id);
   }
 
   @Delete('clubs/:id')
@@ -282,12 +302,16 @@ export class AdminController {
   }
 
   @Get('events')
-  @ApiOperation({ summary: 'Get all events (paginated)' })
+  @ApiOperation({ summary: 'Get all events (paginated). Club managers only see their club events.' })
+  @RequirePermissions(Permission.MANAGE_EVENTS, Permission.SCHEDULE_EVENTS, Permission.VIEW_USERS)
   async getAllEvents(
+    @CurrentUser() user: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
     return this.adminService.getAllEvents(
+      user.id,
+      user.role,
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 20,
     );

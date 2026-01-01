@@ -207,19 +207,21 @@ export class UsersService {
       throw new BadRequestException('Email is already verified');
     }
 
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    // Generate 6-digit OTP code
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
-    // Update user with verification token
+    // Update user with OTP
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        emailVerificationToken: verificationToken,
+        emailVerificationOtp: otpCode,
+        emailVerificationOtpExpires: otpExpires,
       },
     });
 
-    // Send verification email
-    await this.emailService.sendVerificationEmail(user.email, verificationToken, undefined, userId);
+    // Send verification email with OTP
+    await this.emailService.sendVerificationEmail(user.email, otpCode, userId, user.firstName, user.lastName);
 
     return {
       message: 'Verification email sent. Please check your inbox.',
@@ -246,15 +248,27 @@ export class UsersService {
     return { message: 'Account deactivated successfully' };
   }
 
-  async verifyEmail(token: string) {
+  async verifyEmail(otpCode: string, email?: string) {
+    const where: any = {
+      emailVerificationOtp: otpCode,
+    };
+
+    // If email is provided, also filter by email
+    if (email) {
+      where.email = email;
+    }
+
     const user = await this.prisma.user.findFirst({
-      where: {
-        emailVerificationToken: token,
-      },
+      where,
     });
 
     if (!user) {
-      throw new BadRequestException('Invalid verification token');
+      throw new BadRequestException('Invalid verification code');
+    }
+
+    // Check if OTP has expired
+    if (user.emailVerificationOtpExpires && new Date() > user.emailVerificationOtpExpires) {
+      throw new BadRequestException('Verification code has expired. Please request a new one.');
     }
 
     // Verify email
@@ -262,7 +276,8 @@ export class UsersService {
       where: { id: user.id },
       data: {
         isEmailVerified: true,
-        emailVerificationToken: null,
+        emailVerificationOtp: null,
+        emailVerificationOtpExpires: null,
       },
     });
 

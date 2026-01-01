@@ -1,6 +1,7 @@
-import { IsString, IsOptional, IsEnum, IsBoolean, IsDateString, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsBoolean, IsDateString, IsNumber, Min, ValidateIf } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { EventType, EventStatus } from '@prisma/client';
+import { EventType, EventStatus, EventSource, EventLocationType } from '@prisma/client';
 
 export class CreateEventDto {
   @ApiProperty({ description: 'Event title' })
@@ -12,12 +13,17 @@ export class CreateEventDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Event image URL' })
+  @ApiPropertyOptional({ description: 'Event image URL (square/thumbnail)' })
   @IsOptional()
   @IsString()
   image?: string;
 
-  @ApiPropertyOptional({ enum: EventType, description: 'Event type' })
+  @ApiPropertyOptional({ description: 'Event banner URL (wide banner for detail pages)' })
+  @IsOptional()
+  @IsString()
+  banner?: string;
+
+  @ApiPropertyOptional({ enum: EventType, description: 'Event type', default: 'OTHER' })
   @IsOptional()
   @IsEnum(EventType)
   type?: EventType;
@@ -26,6 +32,17 @@ export class CreateEventDto {
   @IsOptional()
   @IsEnum(EventStatus)
   status?: EventStatus;
+
+  @ApiPropertyOptional({ enum: EventSource, description: 'Event source (PLATFORM or CLUB)', default: 'PLATFORM' })
+  @IsOptional()
+  @IsEnum(EventSource)
+  source?: EventSource;
+
+  @ApiPropertyOptional({ enum: EventLocationType, description: 'Event location type (ONLINE, PHYSICAL, HYBRID). If not provided, will be derived from isOnline field.' })
+  @IsOptional()
+  @Transform(({ value }) => value ? value.toUpperCase() : value)
+  @IsEnum(EventLocationType)
+  locationType?: EventLocationType;
 
   @ApiProperty({ description: 'Event start date' })
   @IsDateString()
@@ -36,39 +53,49 @@ export class CreateEventDto {
   @IsDateString()
   endDate?: string;
 
-  @ApiPropertyOptional({ description: 'Event location' })
+  @ApiPropertyOptional({ description: 'Registration deadline' })
   @IsOptional()
+  @IsDateString()
+  registrationDeadline?: string;
+
+  @ApiPropertyOptional({ description: 'Physical location (required if locationType is PHYSICAL or HYBRID)' })
+  @ValidateIf((o) => o.locationType === 'PHYSICAL' || o.locationType === 'HYBRID')
   @IsString()
   location?: string;
 
-  @ApiPropertyOptional({ description: 'Is event online', default: false })
-  @IsOptional()
-  @IsBoolean()
-  isOnline?: boolean;
-
-  @ApiPropertyOptional({ description: 'Online link for virtual events' })
-  @IsOptional()
+  @ApiPropertyOptional({ description: 'Online link (required if locationType is ONLINE or HYBRID)' })
+  @ValidateIf((o) => o.locationType === 'ONLINE' || o.locationType === 'HYBRID')
   @IsString()
   onlineLink?: string;
 
-  @ApiPropertyOptional({ description: 'Maximum attendees', default: 0 })
+  @ApiPropertyOptional({ description: 'Is event online (deprecated, use locationType)', default: false })
+  @IsOptional()
+  @IsBoolean()
+  isOnline?: boolean; // Legacy field for backward compatibility
+
+  @ApiPropertyOptional({ description: 'Maximum attendees (0 = unlimited)', default: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   maxAttendees?: number;
 
-  @ApiPropertyOptional({ description: 'Associated club ID' })
-  @IsOptional()
+  @ApiPropertyOptional({ description: 'Associated club ID (required if source is CLUB)' })
+  @ValidateIf((o) => o.source === 'CLUB')
   @IsString()
   clubId?: string;
+
+  @ApiPropertyOptional({ description: 'Is this event public (for club events, false = members only)', default: true })
+  @IsOptional()
+  @IsBoolean()
+  isPublic?: boolean;
 
   @ApiPropertyOptional({ description: 'Is this a paid event', default: false })
   @IsOptional()
   @IsBoolean()
   isPaid?: boolean;
 
-  @ApiPropertyOptional({ description: 'Event price (required if isPaid is true)' })
-  @IsOptional()
+  @ApiPropertyOptional({ description: 'Event price in KES (required if isPaid is true)' })
+  @ValidateIf((o) => o.isPaid === true)
   @IsNumber()
   @Min(0)
   price?: number;
@@ -78,9 +105,37 @@ export class CreateEventDto {
   @IsString()
   currency?: string;
 
-  @ApiPropertyOptional({ description: 'Payment link (e.g., M-Pesa, PayPal, Stripe)' })
+  @ApiPropertyOptional({ description: 'Payment link (deprecated, M-Pesa STK Push is used instead)' })
   @IsOptional()
   @IsString()
-  paymentLink?: string;
+  paymentLink?: string; // Legacy field
+
+  @ApiPropertyOptional({ description: 'Event tags (array of strings)', type: [String] })
+  @IsOptional()
+  tags?: string[];
+
+  @ApiPropertyOptional({ description: 'Speaker names or IDs (array of strings)', type: [String] })
+  @IsOptional()
+  speakers?: string[];
+
+  @ApiPropertyOptional({ description: 'Event agenda/schedule' })
+  @IsOptional()
+  @IsString()
+  agenda?: string;
+
+  @ApiPropertyOptional({ description: 'Requirements to attend (e.g., bring laptop, prerequisites)' })
+  @IsOptional()
+  @IsString()
+  requirements?: string;
+
+  @ApiPropertyOptional({ description: 'Contact email for event inquiries' })
+  @IsOptional()
+  @IsString()
+  contactEmail?: string;
+
+  @ApiPropertyOptional({ description: 'Contact phone for event inquiries' })
+  @IsOptional()
+  @IsString()
+  contactPhone?: string;
 }
 

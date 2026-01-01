@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ConflictException,
   NotFoundException,
@@ -18,6 +19,8 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -44,8 +47,9 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate email verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
+    // Generate 6-digit OTP code
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
     // Create user
     const user = await this.prisma.user.create({
@@ -62,7 +66,8 @@ export class AuthService {
               ...(educationLevel ? { educationLevel } : {}),
             }
           : {}),
-        emailVerificationToken: verificationToken,
+        emailVerificationOtp: otpCode,
+        emailVerificationOtpExpires: otpExpires,
       },
       select: {
         id: true,
@@ -73,14 +78,47 @@ export class AuthService {
         role: true,
         profileImage: true,
         isStudent: true,
+        isEmailVerified: true,
       },
     });
 
     // Generate token
     const token = this.generateToken(user.id, user.email);
 
-    // Send verification email
-    await this.emailService.sendVerificationEmail(email, verificationToken, undefined, user.id);
+    // Check if email service is configured
+    if (!this.emailService.isEmailConfigured()) {
+      this.logger.warn(
+        `Email service not configured. Verification email will not be sent to ${email}. ` +
+        `Please configure SENDGRID_API_KEY and SENDGRID_FROM environment variables.`
+      );
+      this.logger.warn(`Email configuration status:`, this.emailService.getConfigurationStatus());
+    }
+
+    // Send verification email with OTP (non-blocking but with error handling)
+    this.emailService.sendVerificationEmail(email, otpCode, user.id, firstName, lastName)
+      .then((sent) => {
+        if (sent) {
+          this.logger.log(`✅ Verification email sent successfully to ${email}`);
+        } else {
+          this.logger.warn(`❌ Failed to send verification email to ${email}. Check email service configuration.`);
+        }
+      })
+      .catch((error) => {
+        this.logger.error(`❌ Error sending verification email to ${email}:`, error);
+      });
+
+    // Send welcome email (non-blocking but with error handling)
+    this.emailService.sendWelcomeEmail(email, firstName, lastName, user.id)
+      .then((sent) => {
+        if (sent) {
+          this.logger.log(`✅ Welcome email sent successfully to ${email}`);
+        } else {
+          this.logger.warn(`❌ Failed to send welcome email to ${email}. Check email service configuration.`);
+        }
+      })
+      .catch((error) => {
+        this.logger.error(`❌ Error sending welcome email to ${email}:`, error);
+      });
 
     return {
       user,
@@ -109,11 +147,14 @@ export class AuthService {
     // Generate token
     const token = this.generateToken(user.id, user.email);
 
-    // Return user without password
+    // Return user without password, explicitly including isEmailVerified
     const { password: _, ...userWithoutPassword } = user;
 
     return {
-      user: userWithoutPassword,
+      user: {
+        ...userWithoutPassword,
+        isEmailVerified: user.isEmailVerified ?? false, // Ensure it's always included
+      },
       token,
     };
   }
