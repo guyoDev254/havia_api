@@ -38,6 +38,10 @@ Create a `.env` file in the root directory with the following variables:
 
 - `DATABASE_URL` - PostgreSQL connection string
   - Example: `postgresql://postgres:postgres@localhost:5432/havia_db?schema=public`
+  - For connection pool configuration, add parameters: `?schema=public&connection_limit=20&pool_timeout=20`
+  - Default connection limit is `num_physical_cpus * 2 + 1` (typically 17 for 8 CPUs)
+  - Increase `connection_limit` if experiencing "connection pool timeout" errors
+  - Increase `pool_timeout` (seconds) if connections take longer to acquire
   
 - `JWT_SECRET` - Secret key for JWT tokens (minimum 32 characters)
   - Example: `your-super-secret-jwt-key-change-this-in-production-min-32-chars`

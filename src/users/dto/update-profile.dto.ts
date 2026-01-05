@@ -53,10 +53,5 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   occupation?: string;
-
-  @ApiPropertyOptional({ description: 'Website URL' })
-  @IsOptional()
-  @IsString()
-  website?: string;
 }
 

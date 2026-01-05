@@ -2301,3 +2301,20 @@ model ScheduledEmail {
   @@index([createdBy])
   @@map("scheduled_emails")
 }
+
+// FAQ (Frequently Asked Questions)
+model Faq {
+  id        String   @id @default(uuid())
+  question  String   @db.Text
+  answer    String   @db.Text
+  category  String?  // Optional category for grouping (e.g., "General", "Account", "Mentorship")
+  order     Int      @default(0) // Display order (lower numbers appear first)
+  isActive  Boolean  @default(true) // Allow hiding FAQs without deleting
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([category])
+  @@index([order])
+  @@map("faqs")
+}

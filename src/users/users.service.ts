@@ -11,8 +11,20 @@ export class UsersService {
   ) {}
 
   async findOne(id: string, currentUserId?: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
+    if (!id) {
+      throw new BadRequestException('User ID is required');
+    }
+    
+    try {
+      // Allow users to view their own profile even if inactive (for account management)
+      // But only allow viewing other users if they are active
+      const where: any = { id };
+      if (currentUserId && currentUserId !== id) {
+        where.isActive = true; // Only allow viewing active users (except own profile)
+      }
+      
+      const user = await this.prisma.user.findFirst({
+        where,
       select: {
         id: true,
         email: true,
@@ -28,6 +40,8 @@ export class UsersService {
         occupation: true,
         role: true,
         points: true,
+        isActive: true,
+        isEmailVerified: true,
         userBadges: {
           include: {
             badge: {
@@ -98,23 +112,71 @@ export class UsersService {
     // Transform clubMemberships to clubs array for frontend compatibility
     const clubs = user.clubMemberships?.map((membership) => membership.club) || [];
 
+    // Build response object, omitting clubMemberships instead of setting to undefined
+    const { clubMemberships, ...userWithoutMemberships } = user;
+    const { clubMemberships: countMemberships, ...countWithoutMemberships } = user._count || {};
+
     return {
-      ...user,
+      ...userWithoutMemberships,
       clubs,
-      clubMemberships: undefined, // Remove clubMemberships from response
       _count: {
-        ...user._count,
+        ...countWithoutMemberships,
         clubs: user._count?.clubMemberships || 0,
-        clubMemberships: undefined, // Remove clubMemberships count from response
       },
       isFollowing,
     };
+    } catch (error) {
+      // Log the error for debugging
+      console.error(`Error in findOne for user ${id}:`, error);
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to fetch user: ${error.message}`);
+    }
   }
 
   async updateProfile(userId: string, updateData: any) {
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: updateData,
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+    
+    try {
+      // Filter and sanitize update data to only include allowed fields
+      // Note: 'website' is removed as it doesn't exist in the Prisma User model
+      const allowedFields = [
+        'firstName',
+        'lastName',
+        'phone',
+        'bio',
+        'profileImage',
+        'location',
+        'skills',
+        'interests',
+        'education',
+        'occupation',
+      ];
+      
+      const sanitizedData: any = {};
+      for (const field of allowedFields) {
+        if (updateData[field] !== undefined) {
+          // Handle array fields (skills, interests)
+          if ((field === 'skills' || field === 'interests') && Array.isArray(updateData[field])) {
+            sanitizedData[field] = updateData[field];
+          } else if (field !== 'skills' && field !== 'interests') {
+            // For non-array fields, allow null, empty string, or string values
+            sanitizedData[field] = updateData[field] === '' ? null : updateData[field];
+          }
+        }
+      }
+      
+      // If no valid fields to update, return current user
+      if (Object.keys(sanitizedData).length === 0) {
+        return await this.findOne(userId, userId);
+      }
+      
+      const user = await this.prisma.user.update({
+        where: { id: userId },
+        data: sanitizedData,
       select: {
         id: true,
         email: true,
@@ -130,6 +192,8 @@ export class UsersService {
         occupation: true,
         role: true,
         points: true,
+        isActive: true,
+        isEmailVerified: true,
         userBadges: {
           include: {
             badge: {
@@ -182,16 +246,26 @@ export class UsersService {
     // Transform clubMemberships to clubs array for frontend compatibility
     const clubs = user.clubMemberships?.map((membership) => membership.club) || [];
 
+    // Build response object, omitting clubMemberships instead of setting to undefined
+    const { clubMemberships, ...userWithoutMemberships } = user;
+    const { clubMemberships: countMemberships, ...countWithoutMemberships } = user._count || {};
+
     return {
-      ...user,
+      ...userWithoutMemberships,
       clubs,
-      clubMemberships: undefined, // Remove clubMemberships from response
       _count: {
-        ...user._count,
+        ...countWithoutMemberships,
         clubs: user._count?.clubMemberships || 0,
-        clubMemberships: undefined, // Remove clubMemberships count from response
       },
     };
+    } catch (error) {
+      // Log the error for debugging
+      console.error(`Error in updateProfile for user ${userId}:`, error);
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to update profile: ${error.message}`);
+    }
   }
 
   async resendVerificationEmail(userId: string) {

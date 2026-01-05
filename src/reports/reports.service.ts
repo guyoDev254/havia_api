@@ -143,6 +143,8 @@ export class ReportsService {
               firstName: true,
               lastName: true,
               email: true,
+              strikeCount: true,
+              isPostingRestricted: true,
             },
           },
         },

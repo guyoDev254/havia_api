@@ -997,7 +997,7 @@ export class AdminService {
     const users = await this.getAllUsers(1, 10000, search, role, undefined, 'createdAt', 'desc');
     
     const csvRows = [
-      ['ID', 'Email', 'First Name', 'Last Name', 'Role', 'Active', 'Email Verified', 'Points', 'Created At'],
+      ['ID', 'Email', 'First Name', 'Last Name', 'Role', 'Active', 'Email Verified', 'Points', 'Strikes', 'Posting Restricted', 'Created At'],
       ...users.users.map((user) => [
         user.id,
         user.email,
@@ -1007,7 +1007,135 @@ export class AdminService {
         user.isActive ? 'Yes' : 'No',
         user.isEmailVerified ? 'Yes' : 'No',
         user.points.toString(),
+        (user as any).strikeCount?.toString() || '0',
+        (user as any).isPostingRestricted ? 'Yes' : 'No',
         user.createdAt.toISOString(),
+      ]),
+    ];
+
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  }
+
+  async exportAllEvents(status?: string) {
+    const events = await this.prisma.event.findMany({
+      where: status ? { status: status as any } : undefined,
+      include: {
+        organizer: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        _count: {
+          select: {
+            attendees: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 10000,
+    });
+
+    const csvRows = [
+      ['ID', 'Title', 'Description', 'Type', 'Status', 'Location', 'Start Date', 'End Date', 'Organizer', 'Attendees', 'Created At'],
+      ...events.map((event) => [
+        event.id,
+        event.title,
+        event.description?.replace(/\n/g, ' ') || '',
+        event.type,
+        event.status,
+        event.location || '',
+        event.startDate.toISOString(),
+        event.endDate?.toISOString() || '',
+        `${event.organizer.firstName} ${event.organizer.lastName} (${event.organizer.email})`,
+        event._count.attendees.toString(),
+        event.createdAt.toISOString(),
+      ]),
+    ];
+
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  }
+
+  async exportAllClubs(status?: string) {
+    const clubs = await this.prisma.club.findMany({
+      where: status ? { status: status as any } : undefined,
+      include: {
+        _count: {
+          select: {
+            members: true,
+            events: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 10000,
+    });
+
+    const csvRows = [
+      ['ID', 'Name', 'Description', 'Category', 'Type', 'Status', 'Members', 'Events', 'Created At'],
+      ...clubs.map((club) => [
+        club.id,
+        club.name,
+        club.description?.replace(/\n/g, ' ') || '',
+        club.category,
+        club.type,
+        club.status,
+        club._count.members.toString(),
+        club._count.events.toString(),
+        club.createdAt.toISOString(),
+      ]),
+    ];
+
+    return csvRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+  }
+
+  async exportAllReports(status?: string) {
+    const reports = await this.prisma.report.findMany({
+      where: status ? { status: status as any } : undefined,
+      include: {
+        reporter: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        reportedUser: {
+          select: {
+            firstName: true,
+            lastName: true,
+            email: true,
+            strikeCount: true,
+            isPostingRestricted: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 10000,
+    });
+
+    const csvRows = [
+      ['ID', 'Type', 'Entity Type', 'Reason', 'Status', 'Priority', 'Reporter', 'Reported User', 'Strikes', 'Posting Restricted', 'Created At', 'Resolved At'],
+      ...reports.map((report) => [
+        report.id,
+        report.type,
+        report.entityType,
+        report.reason?.replace(/\n/g, ' ') || '',
+        report.status,
+        report.priority.toString(),
+        report.reporter ? `${report.reporter.firstName} ${report.reporter.lastName} (${report.reporter.email})` : '',
+        report.reportedUser ? `${report.reportedUser.firstName} ${report.reportedUser.lastName} (${report.reportedUser.email})` : '',
+        report.reportedUser?.strikeCount?.toString() || '0',
+        report.reportedUser?.isPostingRestricted ? 'Yes' : 'No',
+        report.createdAt.toISOString(),
+        report.resolvedAt?.toISOString() || '',
       ]),
     ];
 

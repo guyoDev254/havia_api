@@ -36,13 +36,46 @@ export class UsersController {
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
   async getProfile(@CurrentUser() user: any) {
-    return this.usersService.findOne(user.id);
+    if (!user) {
+      throw new BadRequestException('User not authenticated');
+    }
+    
+    // Extract user ID - handle both user.id and user.sub (from JWT payload)
+    const userId = user.id || user.sub;
+    if (!userId) {
+      throw new BadRequestException(`Invalid user data. User object: ${JSON.stringify(user)}`);
+    }
+    
+    try {
+      // Pass userId as both id and currentUserId to allow viewing own profile even if inactive
+      return await this.usersService.findOne(userId, userId);
+    } catch (error) {
+      // Log the error for debugging
+      console.error('Error in getProfile:', error);
+      throw error;
+    }
   }
 
   @Put('me')
   @ApiOperation({ summary: 'Update current user profile' })
   async updateProfile(@CurrentUser() user: any, @Body() updateData: UpdateProfileDto) {
-    return this.usersService.updateProfile(user.id, updateData);
+    if (!user) {
+      throw new BadRequestException('User not authenticated');
+    }
+    
+    // Extract user ID - handle both user.id and user.sub (from JWT payload)
+    const userId = user.id || user.sub;
+    if (!userId) {
+      throw new BadRequestException(`Invalid user data. User object: ${JSON.stringify(user)}`);
+    }
+    
+    try {
+      return await this.usersService.updateProfile(userId, updateData);
+    } catch (error) {
+      // Log the error for debugging
+      console.error('Error in updateProfile:', error);
+      throw error;
+    }
   }
 
   @Get('search')

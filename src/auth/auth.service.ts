@@ -16,6 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { VerifyPasswordResetOtpDto } from './dto/verify-password-reset-otp.dto';
 
 @Injectable()
 export class AuthService {
@@ -195,51 +196,83 @@ export class AuthService {
 
     if (!user) {
       // Don't reveal if user exists for security
-      return { message: 'If an account exists with this email, a password reset link has been sent.' };
+      return { message: 'If an account exists with this email, a password reset OTP has been sent.' };
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = new Date();
-    resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 1); // Token expires in 1 hour
+    // Generate 6-digit OTP code
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
-    // Save reset token to user
+    // Save OTP to user (reusing resetPasswordToken field to store OTP)
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
-        resetPasswordToken: resetToken,
-        resetPasswordExpires: resetTokenExpiry,
+        resetPasswordToken: otpCode,
+        resetPasswordExpires: otpExpires,
       },
     });
 
-    // Send password reset email
-    await this.emailService.sendPasswordResetEmail(email, resetToken, undefined, user.id);
+    // Send password reset OTP email
+    await this.emailService.sendPasswordResetOtpEmail(
+      email,
+      otpCode,
+      user.id,
+      user.firstName,
+      user.lastName,
+    );
 
     return {
-      message: 'If an account exists with this email, a password reset link has been sent.',
+      message: 'If an account exists with this email, a password reset OTP has been sent.',
     };
   }
 
-  async resetPassword(resetPasswordDto: ResetPasswordDto) {
-    const { token, newPassword } = resetPasswordDto;
-
-    const user = await this.prisma.user.findFirst({
-      where: {
-        resetPasswordToken: token,
-        resetPasswordExpires: {
-          gt: new Date(),
-        },
-      },
+  async verifyPasswordResetOtp(email: string, otp: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
     });
 
     if (!user) {
-      throw new BadRequestException('Invalid or expired reset token');
+      // Don't reveal if user exists for security
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    if (
+      !user.resetPasswordToken ||
+      user.resetPasswordToken !== otp ||
+      !user.resetPasswordExpires ||
+      user.resetPasswordExpires < new Date()
+    ) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    return { message: 'OTP verified successfully', verified: true };
+  }
+
+  async resetPassword(resetPasswordDto: ResetPasswordDto) {
+    const { email, otp, newPassword } = resetPasswordDto;
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    // Verify OTP
+    if (
+      !user.resetPasswordToken ||
+      user.resetPasswordToken !== otp ||
+      !user.resetPasswordExpires ||
+      user.resetPasswordExpires < new Date()
+    ) {
+      throw new BadRequestException('Invalid or expired OTP');
     }
 
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password and clear reset token
+    // Update password and clear reset OTP
     await this.prisma.user.update({
       where: { id: user.id },
       data: {

@@ -220,6 +220,45 @@ export class AdminController {
     return res.send(csv);
   }
 
+  @Get('events/export')
+  @ApiOperation({ summary: 'Export all events as CSV' })
+  @RequirePermissions(Permission.EXPORT_DATA)
+  async exportAllEvents(
+    @Res() res: Response,
+    @Query('status') status?: string,
+  ) {
+    const csv = await this.adminService.exportAllEvents(status);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=events-export-${Date.now()}.csv`);
+    return res.send(csv);
+  }
+
+  @Get('clubs/export')
+  @ApiOperation({ summary: 'Export all clubs as CSV' })
+  @RequirePermissions(Permission.EXPORT_DATA)
+  async exportAllClubs(
+    @Res() res: Response,
+    @Query('status') status?: string,
+  ) {
+    const csv = await this.adminService.exportAllClubs(status);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=clubs-export-${Date.now()}.csv`);
+    return res.send(csv);
+  }
+
+  @Get('reports/export')
+  @ApiOperation({ summary: 'Export all reports as CSV' })
+  @RequirePermissions(Permission.EXPORT_DATA)
+  async exportAllReports(
+    @Res() res: Response,
+    @Query('status') status?: string,
+  ) {
+    const csv = await this.adminService.exportAllReports(status);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=reports-export-${Date.now()}.csv`);
+    return res.send(csv);
+  }
+
   @Get('audit-logs')
   @ApiOperation({ summary: 'Get all audit logs' })
   @RequirePermissions(Permission.VIEW_USERS)

@@ -23,34 +23,19 @@ export class EventsService {
     limit?: number;
     userId?: string; // For visibility filtering
   }) {
-    // Get user's club memberships if userId provided
-    let userClubIds: string[] = [];
-    if (filters?.userId) {
-      const memberships = await this.prisma.clubMember.findMany({
-        where: { userId: filters.userId },
-        select: { clubId: true },
-      });
-      userClubIds = memberships.map(m => m.clubId);
-    }
+    try {
+      // Get user's club memberships if userId provided
+      let userClubIds: string[] = [];
+      if (filters?.userId) {
+        const memberships = await this.prisma.clubMember.findMany({
+          where: { userId: filters.userId },
+          select: { clubId: true },
+        });
+        userClubIds = memberships.map(m => m.clubId);
+      }
 
-    const events = await this.prisma.event.findMany({
-      where: {
-        ...(filters?.type && { type: filters.type }),
-        ...(filters?.status && { status: filters.status }),
-        ...(filters?.clubId && { clubId: filters.clubId }),
-        // Visibility rules:
-        // - Platform events: always visible
-        // - Club events: visible if isPublic=true OR user is a member of the club
-        ...(filters?.userId && {
-          OR: [
-            { source: 'PLATFORM' },
-            { source: 'CLUB', isPublic: true },
-            { source: 'CLUB', clubId: { in: userClubIds } },
-          ],
-        }),
-      },
-      ...(filters?.limit && { take: filters.limit }),
-      include: {
+      // Build include object conditionally
+      const includeObj: any = {
         organizer: {
           select: {
             id: true,
@@ -66,7 +51,16 @@ export class EventsService {
             image: true,
           },
         },
-        registrations: filters?.userId ? {
+        _count: {
+          select: {
+            registrations: true,
+          },
+        },
+      };
+
+      // Only include registrations if userId is provided
+      if (filters?.userId) {
+        includeObj.registrations = {
           where: { userId: filters.userId },
           select: {
             id: true,
@@ -74,45 +68,87 @@ export class EventsService {
             status: true,
             paymentStatus: true,
           },
-        } : false,
-        _count: {
-          select: {
-            attendees: true,
-            registrations: true,
-          },
-        },
-      },
-      orderBy: {
-        startDate: 'asc',
-      },
-    });
-
-    // Calculate total attendees by summing quantities from confirmed registrations
-    const eventsWithAttendeeCount = await Promise.all(
-      events.map(async (event) => {
-        const confirmedRegistrations = await this.prisma.eventRegistration.findMany({
-          where: {
-            eventId: event.id,
-            status: 'CONFIRMED',
-          },
-          select: {
-            quantity: true,
-          },
-        });
-
-        const totalAttendees = confirmedRegistrations.reduce((sum, reg) => sum + (reg.quantity || 1), 0);
-
-        return {
-          ...event,
-          _count: {
-            ...event._count,
-            attendees: totalAttendees, // Override with calculated count
-          },
+          take: 1, // Only need the first registration for the current user
         };
-      })
-    );
+      }
 
-    return eventsWithAttendeeCount;
+      const events = await this.prisma.event.findMany({
+        where: {
+          ...(filters?.type && { type: filters.type }),
+          ...(filters?.status && { status: filters.status }),
+          ...(filters?.clubId && { clubId: filters.clubId }),
+          // Visibility rules:
+          // - Platform events: always visible
+          // - Club events: visible if isPublic=true OR user is a member of the club
+          ...(filters?.userId && {
+            OR: [
+              { source: 'PLATFORM' },
+              { source: 'CLUB', isPublic: true },
+              { source: 'CLUB', clubId: { in: userClubIds } },
+            ],
+          }),
+        },
+        ...(filters?.limit && { take: filters.limit }),
+        include: includeObj,
+        orderBy: {
+          startDate: 'asc',
+        },
+      });
+
+      // Calculate total attendees by summing quantities from confirmed registrations
+      const eventsWithAttendeeCount = await Promise.all(
+        events.map(async (event) => {
+          try {
+            const confirmedRegistrations = await this.prisma.eventRegistration.findMany({
+              where: {
+                eventId: event.id,
+                status: 'CONFIRMED',
+              },
+              select: {
+                quantity: true,
+              },
+            });
+
+            const totalAttendees = confirmedRegistrations.reduce((sum, reg) => sum + (reg.quantity || 1), 0);
+
+            // Safely get registrations count
+            const registrationsCount = event._count && 'registrations' in event._count 
+              ? (event._count as { registrations?: number }).registrations || 0 
+              : 0;
+
+            return {
+              ...event,
+              _count: {
+                ...(event._count || {}),
+                attendees: totalAttendees, // Override with calculated count
+                registrations: registrationsCount,
+              },
+            };
+          } catch (error) {
+            this.logger.error(`Error calculating attendees for event ${event.id}:`, error);
+            // Return event with safe defaults if calculation fails
+            // Safely get registrations count
+            const registrationsCount = event._count && 'registrations' in event._count 
+              ? (event._count as { registrations?: number }).registrations || 0 
+              : 0;
+            
+            return {
+              ...event,
+              _count: {
+                ...(event._count || {}),
+                attendees: 0,
+                registrations: registrationsCount,
+              },
+            };
+          }
+        })
+      );
+
+      return eventsWithAttendeeCount;
+    } catch (error) {
+      this.logger.error('Error in findAll events:', error);
+      throw error;
+    }
   }
 
   async findOne(id: string, userId?: string) {

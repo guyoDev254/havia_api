@@ -259,6 +259,76 @@ export class EmailService {
     });
   }
 
+  async sendPasswordResetOtpEmail(
+    email: string,
+    otpCode: string,
+    recipientId?: string,
+    firstName?: string,
+    lastName?: string,
+  ) {
+    const name = firstName ? `${firstName}${lastName ? ` ${lastName}` : ''}` : 'User';
+    
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Password Reset Code</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; background-color: #f5f5f5; line-height: 1.6; color: #333;">
+        
+        <!-- Container -->
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);">
+          
+          <!-- Logo Section -->
+          <div style="background-color: #ffffff; padding: 20px; text-align: center; border-bottom: 1px solid #f0f0f0;">
+            <img src="https://res.cloudinary.com/dymlg8elg/image/upload/v1726666635/NB-1-removebg-preview_cevjr5.png" alt="NorthernBox Logo" style="max-width: 150px; height: auto; display: inline-block;">
+          </div>
+
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; color: white;">
+            <h1 style="font-size: 28px; font-weight: 600; margin: 0;">Password Reset Code</h1>
+          </div>
+
+          <!-- Main Content -->
+          <div style="padding: 40px 30px;">
+            <p style="font-size: 16px; margin: 0 0 20px 0; color: #333;">Hello ${name},</p>
+            <p style="font-size: 16px; margin: 0 0 30px 0; color: #666;">You requested to reset your password. Use the verification code below to proceed:</p>
+            
+            <!-- OTP Code Box -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 30px; text-align: center; margin: 30px 0;">
+              <p style="color: rgba(255, 255, 255, 0.9); font-size: 14px; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px;">Your Verification Code</p>
+              <div style="background: white; border-radius: 8px; padding: 20px; display: inline-block; margin: 10px 0;">
+                <span style="font-size: 36px; font-weight: 700; color: #667eea; letter-spacing: 8px; font-family: 'Courier New', monospace;">${otpCode}</span>
+              </div>
+            </div>
+
+            <p style="font-size: 14px; margin: 30px 0 0 0; color: #888;">This code will expire in 10 minutes.</p>
+            <p style="font-size: 14px; margin: 10px 0 0 0; color: #888;">If you didn't request this code, please ignore this email or contact support if you have concerns.</p>
+          </div>
+
+          <!-- Footer -->
+          <div style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #f0f0f0;">
+            <p style="font-size: 12px; color: #999; margin: 0;">© ${new Date().getFullYear()} NorthernBox. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return this.sendEmail(
+      email,
+      'Password Reset Code - NorthernBox',
+      html,
+      `Password Reset Code\n\nHello ${name},\n\nYou requested to reset your password. Use the verification code below to proceed:\n\n${otpCode}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this code, please ignore this email.`,
+      {
+        type: ScheduledEmailType.PASSWORD_RESET,
+        recipientId,
+      },
+    );
+  }
+
   async sendVerificationEmail(
     email: string,
     otpCode: string,
