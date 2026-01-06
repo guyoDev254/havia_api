@@ -1,0 +1,26 @@
+---
+# Production environment variables for API
+env: production
+
+# Docker settings
+docker_registry: "docker.io"
+docker_image_api: "guyo254/api"
+
+# Container settings
+api_container_name: "havia-api"
+docker_network: "havia-network"
+
+# Port mappings
+api_port: 6000
+
+# Restart policies
+api_restart_policy: "unless-stopped"
+
+# Deployment directories
+deploy_base_dir: "/opt/havia"
+api_deploy_dir: "{{ deploy_base_dir }}/api"
+
+# Backup settings
+backup_enabled: true
+backup_retention_days: 7
+

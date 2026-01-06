@@ -1,0 +1,11 @@
+*.retry
+*.log
+.vault_pass
+inventory/hosts.yml
+host_vars/*
+!host_vars/.gitkeep
+*.pem
+*.key
+.env
+.ansible/
+

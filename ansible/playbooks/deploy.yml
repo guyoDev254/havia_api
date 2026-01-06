@@ -1,0 +1,144 @@
+---
+- name: Deploy Havia API
+  hosts: api_server
+  become: yes
+  vars:
+    image_tag: "{{ image_tag | default('latest') }}"
+    docker_registry: "{{ docker_registry | default('docker.io') }}"
+    docker_image: "{{ docker_image_api | default('guyo254/api') }}"
+    full_image: "{{ docker_registry }}/{{ docker_image }}:{{ image_tag }}"
+    container_name: "{{ api_container_name | default('havia-api') }}"
+    docker_network: "{{ docker_network | default('havia-network') }}"
+    restart_policy: "{{ api_restart_policy | default('unless-stopped') }}"
+    api_port: "{{ api_port | default('6000') }}"
+    deploy_base_dir: "{{ deploy_base_dir | default('/opt/havia') }}"
+    api_deploy_dir: "{{ api_deploy_dir | default('/opt/havia/api') }}"
+  
+  tasks:
+    - name: Ensure Docker is installed
+      apt:
+        name:
+          - docker.io
+          - docker-compose
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Ensure Docker service is running
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Ensure Docker network exists
+      docker_network:
+        name: "{{ docker_network }}"
+        state: present
+
+    - name: Login to Docker registry
+      docker_login:
+        username: "{{ docker_username }}"
+        password: "{{ docker_password }}"
+        registry_url: "{{ docker_registry }}"
+      when: docker_username is defined and docker_password is defined
+      no_log: true
+
+    - name: Pull latest Docker image
+      docker_image:
+        name: "{{ full_image }}"
+        source: pull
+        force_source: yes
+
+    - name: Stop existing container
+      docker_container:
+        name: "{{ container_name }}"
+        state: absent
+      ignore_errors: yes
+
+    - name: Create uploads directory
+      file:
+        path: "{{ api_deploy_dir }}/uploads"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Check if .env file exists
+      stat:
+        path: "{{ api_deploy_dir }}/.env"
+      register: env_file_stat
+
+    - name: Deploy API container
+      docker_container:
+        name: "{{ container_name }}"
+        image: "{{ full_image }}"
+        state: started
+        restart_policy: "{{ restart_policy }}"
+        networks:
+          - name: "{{ docker_network }}"
+        env_file: "{{ api_deploy_dir }}/.env"
+        volumes:
+          - "{{ api_deploy_dir }}/uploads:/app/uploads"
+        healthcheck:
+          test: ["CMD", "node", "-e", "require('http').get('http://localhost:{{ api_port }}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+          interval: 30s
+          timeout: 3s
+          retries: 3
+          start_period: 40s
+        command: >
+          sh -c "
+            echo 'Running database migrations...' &&
+            npx prisma migrate deploy &&
+            echo 'Starting API server...' &&
+            node dist/src/main.js
+          "
+      when: env_file_stat.stat.exists
+
+    - name: Deploy API container (without env_file)
+      docker_container:
+        name: "{{ container_name }}"
+        image: "{{ full_image }}"
+        state: started
+        restart_policy: "{{ restart_policy }}"
+        networks:
+          - name: "{{ docker_network }}"
+        volumes:
+          - "{{ api_deploy_dir }}/uploads:/app/uploads"
+        healthcheck:
+          test: ["CMD", "node", "-e", "require('http').get('http://localhost:{{ api_port }}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+          interval: 30s
+          timeout: 3s
+          retries: 3
+          start_period: 40s
+        command: >
+          sh -c "
+            echo 'Running database migrations...' &&
+            npx prisma migrate deploy &&
+            echo 'Starting API server...' &&
+            node dist/src/main.js
+          "
+      when: not env_file_stat.stat.exists
+
+    - name: Wait for API to be healthy
+      uri:
+        url: "http://localhost:{{ api_port }}/health"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 10
+      delay: 5
+      ignore_errors: yes
+
+    - name: Clean up old Docker images
+      shell: |
+        docker image prune -af --filter "until=168h" --filter "label!=keep"
+      ignore_errors: yes
+
+    - name: Display deployment info
+      debug:
+        msg:
+          - "API deployed successfully!"
+          - "Image: {{ full_image }}"
+          - "Container: {{ container_name }}"
+          - "Port: {{ api_port }}"
+
