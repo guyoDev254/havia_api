@@ -5,6 +5,15 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
+// TypeScript declaration for global.gc (garbage collection)
+declare global {
+  namespace NodeJS {
+    interface Global {
+      gc?: () => void;
+    }
+  }
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   
@@ -137,12 +146,50 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
+  // Memory monitoring and garbage collection
+  const memoryMonitoringInterval = setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const formatMB = (bytes: number) => Math.round((bytes / 1024 / 1024) * 100) / 100;
+    
+    console.log(`📊 Memory Usage: RSS=${formatMB(memUsage.rss)}MB, Heap Used=${formatMB(memUsage.heapUsed)}MB, Heap Total=${formatMB(memUsage.heapTotal)}MB, External=${formatMB(memUsage.external)}MB`);
+    
+    // If heap usage exceeds 80% of the limit, trigger garbage collection
+    if (global.gc && memUsage.heapUsed > memUsage.heapTotal * 0.8) {
+      console.log('🧹 Triggering garbage collection due to high heap usage...');
+      global.gc();
+    }
+    
+    // Warn if memory usage is getting high
+    if (memUsage.rss > 1500 * 1024 * 1024) { // 1.5GB
+      console.warn(`⚠️ High memory usage detected: RSS=${formatMB(memUsage.rss)}MB`);
+    }
+  }, 300000); // Every 5 minutes
+
+  // Clean up on shutdown
+  process.on('SIGTERM', async () => {
+    console.log('🛑 SIGTERM received, shutting down gracefully...');
+    clearInterval(memoryMonitoringInterval);
+    await app.close();
+  });
+
+  process.on('SIGINT', async () => {
+    console.log('🛑 SIGINT received, shutting down gracefully...');
+    clearInterval(memoryMonitoringInterval);
+    await app.close();
+  });
+
   const port = process.env.PORT || 8000;
   // Listen on all interfaces (0.0.0.0) to allow network access from mobile devices
   await app.listen(port, '0.0.0.0');
   console.log(`🚀 Havia API is running on: http://localhost:${port}`);
   console.log(`🌐 Network access: http://0.0.0.0:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api`);
+  console.log(`💾 Memory monitoring enabled (every 5 minutes)`);
+  if (global.gc) {
+    console.log(`✅ Garbage collection enabled (--expose-gc flag detected)`);
+  } else {
+    console.log(`⚠️ Garbage collection not enabled. Start with --expose-gc flag for better memory management.`);
+  }
 }
 
 bootstrap().catch(console.error);

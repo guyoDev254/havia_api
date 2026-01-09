@@ -13,12 +13,15 @@ if (process.env.DATABASE_URL) {
     // Set connection pool parameters if not already present
     if (!urlObj.searchParams.has('connection_limit')) {
       // For pooler endpoints (like Neon), use connection_limit=1 as the pooler manages connections
-      // For direct connections, use a higher limit
-      const connectionLimit = isUsingPooler ? '1' : '10';
+      // For direct connections, use a higher limit to prevent connection exhaustion
+      const connectionLimit = isUsingPooler ? '1' : '20';
       urlObj.searchParams.set('connection_limit', connectionLimit);
     }
     if (!urlObj.searchParams.has('pool_timeout')) {
-      urlObj.searchParams.set('pool_timeout', '10');
+      urlObj.searchParams.set('pool_timeout', '20');
+    }
+    if (!urlObj.searchParams.has('connect_timeout')) {
+      urlObj.searchParams.set('connect_timeout', '10');
     }
 
     const enhancedUrl = urlObj.toString();

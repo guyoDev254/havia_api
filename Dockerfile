@@ -61,6 +61,6 @@ EXPOSE 6000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:6000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-# Start the application
-CMD ["node", "--max-old-space-size=2048", "dist/src/main"]
+# Start the application with memory limits and garbage collection enabled
+CMD ["node", "--max-old-space-size=1536", "--expose-gc", "dist/src/main"]
 

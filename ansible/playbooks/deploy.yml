@@ -79,6 +79,13 @@
         env_file: "{{ api_deploy_dir }}/.env"
         volumes:
           - "{{ api_deploy_dir }}/uploads:/app/uploads"
+        memory: "{{ container_memory | default('2g') }}"
+        memory_swap: "{{ container_memory_swap | default('2g') }}"
+        memory_reservation: "{{ container_memory_reservation | default('512m') }}"
+        oom_kill_disable: false
+        cpu_shares: 1024
+        ulimits:
+          - "nofile=65536:65536"
         healthcheck:
           test: ["CMD", "node", "-e", "require('http').get('http://localhost:{{ api_port }}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
           interval: 30s
@@ -89,8 +96,8 @@
           sh -c "
             echo 'Running database migrations...' &&
             npx prisma migrate deploy &&
-            echo 'Starting API server...' &&
-            node dist/src/main.js
+            echo 'Starting API server with memory limits...' &&
+            node --max-old-space-size=1536 --expose-gc dist/src/main.js
           "
       when: env_file_stat.stat.exists
 
@@ -104,6 +111,13 @@
           - name: "{{ docker_network }}"
         volumes:
           - "{{ api_deploy_dir }}/uploads:/app/uploads"
+        memory: "{{ container_memory | default('2g') }}"
+        memory_swap: "{{ container_memory_swap | default('2g') }}"
+        memory_reservation: "{{ container_memory_reservation | default('512m') }}"
+        oom_kill_disable: false
+        cpu_shares: 1024
+        ulimits:
+          - "nofile=65536:65536"
         healthcheck:
           test: ["CMD", "node", "-e", "require('http').get('http://localhost:{{ api_port }}/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
           interval: 30s
@@ -114,8 +128,8 @@
           sh -c "
             echo 'Running database migrations...' &&
             npx prisma migrate deploy &&
-            echo 'Starting API server...' &&
-            node dist/src/main.js
+            echo 'Starting API server with memory limits...' &&
+            node --max-old-space-size=1536 --expose-gc dist/src/main.js
           "
       when: not env_file_stat.stat.exists
 
