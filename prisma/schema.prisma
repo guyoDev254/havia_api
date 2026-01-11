@@ -5,6 +5,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// The datasource configuration for connection URLs has changed in Prisma 5+.
+// Move connection URLs to prisma.config.ts (not in schema.prisma).
+// Remove the `url` property and leave only the provider here.
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -185,6 +189,7 @@ enum MatchStatus {
 }
 
 enum SessionStatus {
+  REQUESTED  // Mentee has requested a session (pending mentor approval)
   SCHEDULED
   COMPLETED
   CANCELLED
@@ -1461,6 +1466,9 @@ model MentorshipSession {
   completedBy   String? // userId who marked it complete
   duration      Int? // Duration in minutes
   topics        String?       @db.Text // Topics covered
+  location      String? // Physical location for in-person sessions
+  isOnline      Boolean       @default(false) // Whether the session is online
+  onlineLink    String? // Online meeting link (required if isOnline is true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -1598,6 +1606,7 @@ model Post {
   parentPostId String? // For replies: reference to parent post
   content      String   @db.Text
   images       String[] // Array of image URLs
+  hashtags     String[] // Array of hashtags (extracted from content)
   type         PostType @default(POST)
   isPinned     Boolean  @default(false)
   isDeleted    Boolean  @default(false)

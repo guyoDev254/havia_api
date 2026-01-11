@@ -19,6 +19,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateMentorProfileDto } from './dto/create-mentor-profile.dto';
 import { CreateMenteeProfileDto } from './dto/create-mentee-profile.dto';
 import { CreateCycleDto } from './dto/create-cycle.dto';
+import { CreateSessionDto } from './dto/create-session.dto';
+import { UpdateSessionDto } from './dto/update-session.dto';
 
 @Injectable()
 export class MentorshipService {
@@ -1202,6 +1204,377 @@ export class MentorshipService {
     return sessions;
   }
 
+  /**
+   * Create a new session (mentor only)
+   */
+  async createSession(mentorshipId: string, userId: string, dto: CreateSessionDto) {
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      include: {
+        mentor: { select: { id: true, firstName: true, lastName: true } },
+        mentee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (!mentorship) {
+      throw new NotFoundException('Mentorship not found');
+    }
+
+    // Only mentors can create sessions
+    if (mentorship.mentorId !== userId) {
+      throw new ForbiddenException('Only mentors can create sessions');
+    }
+
+    if (mentorship.status !== MentorshipStatus.ACTIVE) {
+      throw new BadRequestException('Can only create sessions for active mentorships');
+    }
+
+    const scheduledDate = new Date(dto.scheduledDate);
+    if (isNaN(scheduledDate.getTime())) {
+      throw new BadRequestException('Invalid date format for scheduledDate');
+    }
+
+    // Validate that the date is in the future
+    const now = new Date();
+    if (scheduledDate < now) {
+      throw new BadRequestException('Cannot schedule sessions in the past');
+    }
+
+    // Validate online session requirements
+    if (dto.isOnline && !dto.onlineLink) {
+      throw new BadRequestException('Online link is required for online sessions');
+    }
+
+    // Create the session
+    const session = await this.prisma.mentorshipSession.create({
+      data: {
+        mentorshipId,
+        scheduledDate,
+        status: SessionStatus.SCHEDULED,
+        topics: dto.topics || null,
+        notes: dto.notes || null,
+        duration: dto.duration || null,
+        location: dto.location || null,
+        isOnline: dto.isOnline || false,
+        onlineLink: dto.onlineLink || null,
+      },
+    });
+
+    // Notify the mentee
+    await this.notificationsService.createAndSend(mentorship.menteeId, {
+      title: 'New Session Scheduled',
+      message: `${mentorship.mentor.firstName} ${mentorship.mentor.lastName} scheduled a session for ${scheduledDate.toLocaleDateString()}.`,
+      type: 'MENTORSHIP_REQUEST' as any,
+      mentorshipId: mentorship.id,
+    });
+
+    return session;
+  }
+
+  /**
+   * Update a session (mentor only, upcoming sessions only)
+   */
+  async updateSession(sessionId: string, userId: string, dto: UpdateSessionDto) {
+    const session = await this.prisma.mentorshipSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        mentorship: {
+          include: {
+            mentor: { select: { id: true, firstName: true, lastName: true } },
+            mentee: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    // Only mentors can update sessions
+    if (session.mentorship.mentorId !== userId) {
+      throw new ForbiddenException('Only mentors can update sessions');
+    }
+
+    // Only upcoming scheduled sessions can be edited
+    const now = new Date();
+    const isPast = session.scheduledDate < now;
+    if (session.status !== SessionStatus.SCHEDULED || isPast) {
+      throw new BadRequestException('Only upcoming scheduled sessions can be edited');
+    }
+
+    const updateData: any = {};
+
+    if (dto.scheduledDate) {
+      const scheduledDate = new Date(dto.scheduledDate);
+      if (isNaN(scheduledDate.getTime())) {
+        throw new BadRequestException('Invalid date format for scheduledDate');
+      }
+
+      // Validate that the date is in the future
+      if (scheduledDate < now) {
+        throw new BadRequestException('Cannot schedule sessions in the past');
+      }
+
+      updateData.scheduledDate = new Date(dto.scheduledDate);
+    }
+
+    if (dto.topics !== undefined) {
+      updateData.topics = dto.topics || null;
+    }
+
+    if (dto.notes !== undefined) {
+      updateData.notes = dto.notes || null;
+    }
+
+    if (dto.duration !== undefined) {
+      updateData.duration = dto.duration || null;
+    }
+
+    if (dto.isOnline !== undefined) {
+      updateData.isOnline = dto.isOnline;
+      // If switching to online, validate onlineLink
+      if (dto.isOnline && !dto.onlineLink && !session.onlineLink) {
+        throw new BadRequestException('Online link is required for online sessions');
+      }
+      // If switching to offline, clear onlineLink
+      if (!dto.isOnline) {
+        updateData.onlineLink = null;
+      }
+    }
+
+    if (dto.location !== undefined) {
+      updateData.location = dto.location || null;
+    }
+
+    if (dto.onlineLink !== undefined) {
+      updateData.onlineLink = dto.onlineLink || null;
+      // Validate that onlineLink is provided if session is online
+      const willBeOnline = dto.isOnline !== undefined ? dto.isOnline : session.isOnline;
+      if (willBeOnline && !dto.onlineLink) {
+        throw new BadRequestException('Online link is required for online sessions');
+      }
+    }
+
+    const updated = await this.prisma.mentorshipSession.update({
+      where: { id: sessionId },
+      data: updateData,
+    });
+
+    // Notify the mentee if the date changed
+    if (dto.scheduledDate) {
+      await this.notificationsService.createAndSend(session.mentorship.menteeId, {
+        title: 'Session Updated',
+        message: `${session.mentorship.mentor.firstName} ${session.mentorship.mentor.lastName} updated the session schedule.`,
+        type: 'MENTORSHIP_REQUEST' as any,
+        mentorshipId: session.mentorshipId,
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Cancel a session (mentor only, scheduled sessions only)
+   */
+  async cancelSession(sessionId: string, userId: string) {
+    const session = await this.prisma.mentorshipSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        mentorship: {
+          include: {
+            mentor: { select: { id: true, firstName: true, lastName: true } },
+            mentee: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    // Only mentors can cancel sessions
+    if (session.mentorship.mentorId !== userId) {
+      throw new ForbiddenException('Only mentors can cancel sessions');
+    }
+
+    // Only scheduled sessions can be cancelled
+    if (session.status !== SessionStatus.SCHEDULED) {
+      throw new BadRequestException('Only scheduled sessions can be cancelled');
+    }
+
+    const cancelled = await this.prisma.mentorshipSession.update({
+      where: { id: sessionId },
+      data: {
+        status: SessionStatus.CANCELLED,
+      },
+    });
+
+    // Notify the mentee
+    await this.notificationsService.createAndSend(session.mentorship.menteeId, {
+      title: 'Session Cancelled',
+      message: `${session.mentorship.mentor.firstName} ${session.mentorship.mentor.lastName} cancelled the scheduled session.`,
+      type: 'MENTORSHIP_REQUEST' as any,
+      mentorshipId: session.mentorshipId,
+    });
+
+    return cancelled;
+  }
+
+  /**
+   * Mark a session as completed (mentor only)
+   */
+  async completeSession(sessionId: string, userId: string, notes?: string) {
+    const session = await this.prisma.mentorshipSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        mentorship: {
+          include: {
+            mentor: { select: { id: true, firstName: true, lastName: true } },
+            mentee: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    // Only mentors can complete sessions
+    if (session.mentorship.mentorId !== userId) {
+      throw new ForbiddenException('Only mentors can complete sessions');
+    }
+
+    // Only scheduled sessions can be completed
+    if (session.status !== SessionStatus.SCHEDULED) {
+      throw new BadRequestException('Only scheduled sessions can be completed');
+    }
+
+    const completed = await this.prisma.mentorshipSession.update({
+      where: { id: sessionId },
+      data: {
+        status: SessionStatus.COMPLETED,
+        actualDate: new Date(),
+        completedBy: userId,
+        notes: notes || session.notes,
+      },
+    });
+
+    // Increment sessions completed count
+    await this.prisma.mentorship.update({
+      where: { id: session.mentorshipId },
+      data: {
+        sessionsCompleted: { increment: 1 },
+      },
+    });
+
+    // Notify the mentee
+    await this.notificationsService.createAndSend(session.mentorship.menteeId, {
+      title: 'Session Completed',
+      message: `${session.mentorship.mentor.firstName} ${session.mentorship.mentor.lastName} marked the session as completed.`,
+      type: 'MENTORSHIP_REQUEST' as any,
+      mentorshipId: session.mentorshipId,
+    });
+
+    return completed;
+  }
+
+  /**
+   * Request a session (mentee only)
+   * Mentees can request sessions, which mentors can then approve and schedule
+   */
+  async requestSession(
+    mentorshipId: string,
+    menteeUserId: string,
+    data: { requestedDate?: string; notes?: string },
+  ) {
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      include: {
+        mentor: { select: { id: true, firstName: true, lastName: true } },
+        mentee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    if (!mentorship) {
+      throw new NotFoundException('Mentorship not found');
+    }
+
+    // Only mentees can request sessions
+    if (mentorship.menteeId !== menteeUserId) {
+      throw new ForbiddenException('Only mentees can request sessions');
+    }
+
+    if (mentorship.status !== MentorshipStatus.ACTIVE) {
+      throw new BadRequestException('Can only request sessions for active mentorships');
+    }
+
+    // Parse requested date if provided, otherwise use a placeholder date
+    const requestedDate = data.requestedDate 
+      ? new Date(data.requestedDate)
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Default to 7 days from now
+
+    if (isNaN(requestedDate.getTime())) {
+      throw new BadRequestException('Invalid date format for requestedDate');
+    }
+
+    // Extract topics from notes if provided
+    let topics: string | null = null;
+    let cleanedNotes: string | null = null;
+    
+    if (data.notes) {
+      const topicsMatch = data.notes.match(/Topics:\s*(.+?)(?:\n|$)/i);
+      if (topicsMatch) {
+        topics = topicsMatch[1].trim();
+      }
+      
+      cleanedNotes = data.notes
+        .replace(/Topics:\s*.+?(?:\n|$)/gi, '')
+        .trim();
+      
+      if (cleanedNotes === '') {
+        cleanedNotes = `Session requested by mentee for ${requestedDate.toLocaleDateString()}`;
+      }
+    } else {
+      cleanedNotes = `Session requested by mentee for ${requestedDate.toLocaleDateString()}`;
+    }
+
+    // Create a session request (status: REQUESTED)
+    const sessionRequest = await this.prisma.mentorshipSession.create({
+      data: {
+        mentorshipId,
+        scheduledDate: requestedDate,
+        status: SessionStatus.REQUESTED,
+        topics: topics,
+        notes: cleanedNotes,
+      },
+      include: {
+        mentorship: {
+          include: {
+            mentor: { select: { id: true, firstName: true, lastName: true } },
+            mentee: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+      },
+    });
+
+    // Notify mentor about the session request
+    await this.notificationsService.createAndSend(mentorship.mentorId, {
+      title: 'New Session Request',
+      message: `${mentorship.mentee.firstName} ${mentorship.mentee.lastName} has requested a session for ${requestedDate.toLocaleDateString()}.`,
+      type: 'MENTORSHIP_REQUEST' as any,
+      mentorshipId: mentorship.id,
+      link: `/mentorship/${mentorshipId}/sessions`,
+    });
+
+    return {
+      ...sessionRequest,
+      message: 'Session request sent to mentor. They will review and schedule if available.',
+    };
+  }
+
   async recordSession(
     mentorshipId: string,
     actorUserId: string,
@@ -1228,10 +1601,14 @@ export class MentorshipService {
     const updateData: any = {};
 
     // Handle session completion
-    // Both mentor and mentee can mark sessions as complete
-    // This allows either party to confirm the session happened
+    // Only mentors can mark sessions as complete
     if (data.sessionCompleted) {
       const isMentor = mentorship.mentorId === actorUserId;
+      
+      // Only mentors can mark sessions as complete
+      if (!isMentor) {
+        throw new ForbiddenException('Only mentors can mark sessions as complete');
+      }
       
       // Find the most recent scheduled session that hasn't been completed
       const nextSession = await this.prisma.mentorshipSession.findFirst({
@@ -1292,7 +1669,16 @@ export class MentorshipService {
     }
 
     // Handle next session date
+    // Only mentors can schedule sessions directly or approve session requests
+    // Mentees must make requests instead
     if (data.nextSessionDate !== undefined) {
+      const isMentor = mentorship.mentorId === actorUserId;
+      
+      // Only mentors can schedule sessions directly
+      if (!isMentor) {
+        throw new ForbiddenException('Only mentors can schedule sessions. Please request a session instead.');
+      }
+      
       if (data.nextSessionDate) {
         const nextDate = new Date(data.nextSessionDate);
         if (isNaN(nextDate.getTime())) {
@@ -1311,35 +1697,101 @@ export class MentorshipService {
         
         updateData.nextSessionDate = nextDate;
 
-        // Create or update a scheduled session record
-        const existingScheduled = await this.prisma.mentorshipSession.findFirst({
+        // Extract topics and other details from notes if provided
+        let topics: string | null = null;
+        let duration: number | null = null;
+        let cleanedNotes: string | null = null;
+        
+        if (data.notes) {
+          // Parse topics from notes (format: "Topics: ...")
+          const topicsMatch = data.notes.match(/Topics:\s*(.+?)(?:\n|$)/i);
+          if (topicsMatch) {
+            topics = topicsMatch[1].trim();
+          }
+          
+          // Parse duration from notes (format: "Duration: X minutes")
+          const durationMatch = data.notes.match(/Duration:\s*(\d+)\s*minutes?/i);
+          if (durationMatch) {
+            duration = parseInt(durationMatch[1]);
+          }
+          
+          // Clean notes - remove parsed fields
+          cleanedNotes = data.notes
+            .replace(/Topics:\s*.+?(?:\n|$)/gi, '')
+            .replace(/Location:\s*.+?(?:\n|$)/gi, '')
+            .replace(/Meeting Link:\s*.+?(?:\n|$)/gi, '')
+            .replace(/Duration:\s*\d+\s*minutes?/gi, '')
+            .trim();
+          
+          if (cleanedNotes === '') {
+            cleanedNotes = null;
+          }
+        }
+
+        // Check if there's a REQUESTED session that can be approved
+        const requestedSession = await this.prisma.mentorshipSession.findFirst({
           where: {
             mentorshipId,
-            status: SessionStatus.SCHEDULED,
-            scheduledDate: { gte: now },
+            status: SessionStatus.REQUESTED,
           },
-          orderBy: { scheduledDate: 'asc' },
+          orderBy: { createdAt: 'desc' },
         });
 
-        if (existingScheduled) {
-          // Update the existing scheduled session
+        if (requestedSession) {
+          // Approve the requested session by updating it to SCHEDULED
           await this.prisma.mentorshipSession.update({
-            where: { id: existingScheduled.id },
+            where: { id: requestedSession.id },
             data: {
-              scheduledDate: nextDate,
-              notes: data.notes || existingScheduled.notes,
-            },
-          });
-        } else {
-          // Create a new scheduled session
-          await this.prisma.mentorshipSession.create({
-            data: {
-              mentorshipId,
               scheduledDate: nextDate,
               status: SessionStatus.SCHEDULED,
-              notes: data.notes,
+              topics: topics || requestedSession.topics,
+              duration: duration || requestedSession.duration,
+              notes: cleanedNotes || requestedSession.notes,
             },
           });
+
+          // Notify mentee that their session request was approved
+          await this.notificationsService.createAndSend(mentorship.menteeId, {
+            title: 'Session Request Approved',
+            message: `${mentorship.mentor.firstName} ${mentorship.mentor.lastName} has approved your session request and scheduled it for ${nextDate.toLocaleDateString()}.`,
+            type: 'MENTORSHIP_REQUEST' as any,
+            mentorshipId: mentorship.id,
+          });
+        } else {
+          // No requested session, check for existing scheduled session
+          const existingScheduled = await this.prisma.mentorshipSession.findFirst({
+            where: {
+              mentorshipId,
+              status: SessionStatus.SCHEDULED,
+              scheduledDate: { gte: now },
+            },
+            orderBy: { scheduledDate: 'asc' },
+          });
+
+          if (existingScheduled) {
+            // Update the existing scheduled session
+            await this.prisma.mentorshipSession.update({
+              where: { id: existingScheduled.id },
+              data: {
+                scheduledDate: nextDate,
+                topics: topics !== null ? topics : existingScheduled.topics,
+                duration: duration !== null ? duration : existingScheduled.duration,
+                notes: cleanedNotes !== null ? cleanedNotes : existingScheduled.notes,
+              },
+            });
+          } else {
+            // Create a new scheduled session
+            await this.prisma.mentorshipSession.create({
+              data: {
+                mentorshipId,
+                scheduledDate: nextDate,
+                status: SessionStatus.SCHEDULED,
+                topics: topics || null,
+                duration: duration || null,
+                notes: cleanedNotes || null,
+              },
+            });
+          }
         }
 
         // Notify the other party when a session is scheduled

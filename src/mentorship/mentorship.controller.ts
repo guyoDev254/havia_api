@@ -17,6 +17,8 @@ import { ApplyMentorDto } from './dto/apply-mentor.dto';
 import { CreateMentorProfileDto } from './dto/create-mentor-profile.dto';
 import { CreateMenteeProfileDto } from './dto/create-mentee-profile.dto';
 import { CreateCycleDto } from './dto/create-cycle.dto';
+import { CreateSessionDto } from './dto/create-session.dto';
+import { UpdateSessionDto } from './dto/update-session.dto';
 import { TaskStatus, EvaluationType } from '@prisma/client';
 
 @ApiTags('mentorship')
@@ -206,8 +208,61 @@ export class MentorshipController {
     return this.mentorshipService.getSessions(mentorshipId);
   }
 
+  @Post('sessions/:mentorshipId')
+  @ApiOperation({ summary: 'Create a new session (mentor only)' })
+  async createSession(
+    @CurrentUser() user: any,
+    @Param('mentorshipId') mentorshipId: string,
+    @Body() dto: CreateSessionDto,
+  ) {
+    return this.mentorshipService.createSession(mentorshipId, user.id, dto);
+  }
+
+  @Put('sessions/:sessionId')
+  @ApiOperation({ summary: 'Update a session (mentor only, upcoming sessions only)' })
+  async updateSession(
+    @CurrentUser() user: any,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: UpdateSessionDto,
+  ) {
+    return this.mentorshipService.updateSession(sessionId, user.id, dto);
+  }
+
+  @Put('sessions/:sessionId/cancel')
+  @ApiOperation({ summary: 'Cancel a session (mentor only, scheduled sessions only)' })
+  async cancelSession(
+    @CurrentUser() user: any,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.mentorshipService.cancelSession(sessionId, user.id);
+  }
+
+  @Put('sessions/:sessionId/complete')
+  @ApiOperation({ summary: 'Mark a session as completed (mentor only)' })
+  async completeSession(
+    @CurrentUser() user: any,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { notes?: string },
+  ) {
+    return this.mentorshipService.completeSession(sessionId, user.id, body.notes);
+  }
+
+  @Post(':id/session-request')
+  @ApiOperation({ summary: 'Request a session (mentee only)' })
+  async requestSession(
+    @CurrentUser() user: any,
+    @Param('id') mentorshipId: string,
+    @Body()
+    body: {
+      requestedDate?: string;
+      notes?: string;
+    },
+  ) {
+    return this.mentorshipService.requestSession(mentorshipId, user.id, body);
+  }
+
   @Put(':id/session')
-  @ApiOperation({ summary: 'Schedule next session and/or mark a session as completed (mentor/mentee)' })
+  @ApiOperation({ summary: 'Schedule next session and/or mark a session as completed (mentor only)' })
   async recordSession(
     @CurrentUser() user: any,
     @Param('id') mentorshipId: string,
@@ -281,6 +336,13 @@ export class MentorshipController {
 
   // ==================== LEGACY ENDPOINTS ====================
 
+  @Get('mentors')
+  @ApiOperation({ summary: 'Get available mentors' })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  async getMentors(@Query('search') search?: string) {
+    return this.mentorshipService.getMentors(search);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get all mentorship sessions for current user' })
   async findAll(@CurrentUser() user: any, @Query() filters: any) {
@@ -294,13 +356,6 @@ export class MentorshipController {
   @ApiOperation({ summary: 'Get mentorship by ID' })
   async findOne(@Param('id') id: string) {
     return this.mentorshipService.findOne(id);
-  }
-
-  @Get('mentors')
-  @ApiOperation({ summary: 'Get available mentors' })
-  @ApiQuery({ name: 'search', required: false, type: String })
-  async getMentors(@Query('search') search?: string) {
-    return this.mentorshipService.getMentors(search);
   }
 
   @Post('request')

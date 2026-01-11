@@ -17,6 +17,19 @@ export class PostsService {
     private notificationsService: NotificationsService,
   ) {}
 
+  /**
+   * Extract hashtags from content
+   * Matches #hashtag pattern, case-insensitive, allows alphanumeric and underscores
+   */
+  private extractHashtags(content: string): string[] {
+    const hashtagRegex = /#(\w+)/g;
+    const matches = content.matchAll(hashtagRegex);
+    const hashtags = Array.from(matches, (match) => match[1].toLowerCase());
+    
+    // Remove duplicates
+    return [...new Set(hashtags)];
+  }
+
   async create(userId: string, createPostDto: CreatePostDto) {
     // Check if user is restricted from posting
     const user = await this.prisma.user.findUnique({
@@ -30,6 +43,9 @@ export class PostsService {
       );
     }
     const { content, clubId, parentPostId, images } = createPostDto;
+    
+    // Extract hashtags from content
+    const hashtags = this.extractHashtags(content);
 
     // If replying, verify parent post exists
     if (parentPostId) {
@@ -70,6 +86,7 @@ export class PostsService {
         parentPostId: parentPostId || null,
         content,
         images: images || [],
+        hashtags: hashtags || [],
         type: parentPostId ? PostType.REPLY : PostType.POST,
       },
       include: {
