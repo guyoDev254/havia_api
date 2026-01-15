@@ -95,10 +95,20 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev
           tags: |
-            type=raw,value={{date 'YYYY.mm.dd'}}
-            type=raw,value={{date 'YYYY.mm.dd'}}-${{ github.run_number }}
+            type=raw,value=latest
+            type=raw,value=dev-latest
+            type=raw,value={{date 'YYYY-MM-DD'}}
+            type=raw,value={{date 'YYYY-MM-DD'}}-${{ github.run_number }}
             type=raw,value=build-${{ github.run_number }}
             type=sha,prefix=dev-,format=short
+            type=ref,event=branch
+
+      - name: Show tags to be pushed
+        run: |
+          echo "Tags to be pushed:"
+          echo "${{ steps.meta.outputs.tags }}"
+          echo "Labels:"
+          echo "${{ steps.meta.outputs.labels }}"
 
       - name: Build and push Docker image (multi-platform)
         uses: docker/build-push-action@v5
@@ -113,6 +123,11 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             NODE_ENV=test
+          
+      - name: Verify image tags
+        run: |
+          echo "Verifying pushed tags..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev:latest || echo "Note: latest tag may not be immediately available"
 
   docker-build-production:
     name: Build & Push Docker Image (Production)
@@ -148,11 +163,21 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value={{date 'YYYY.mm.dd'}}
-            type=raw,value={{date 'YYYY.mm.dd'}}-${{ github.run_number }}
+            type=raw,value=latest
+            type=raw,value=prod-latest
+            type=raw,value={{date 'YYYY-MM-DD'}}
+            type=raw,value={{date 'YYYY-MM-DD'}}-${{ github.run_number }}
             type=raw,value=build-${{ github.run_number }}
             type=semver,pattern={{version}}
             type=sha,prefix=prod-,format=short
+            type=ref,event=branch
+
+      - name: Show tags to be pushed
+        run: |
+          echo "Tags to be pushed:"
+          echo "${{ steps.meta.outputs.tags }}"
+          echo "Labels:"
+          echo "${{ steps.meta.outputs.labels }}"
 
       - name: Build and push Docker image (multi-platform)
         uses: docker/build-push-action@v5
@@ -167,6 +192,11 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             NODE_ENV=production
+          
+      - name: Verify image tags
+        run: |
+          echo "Verifying pushed tags..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest || echo "Note: latest tag may not be immediately available"
 
   # ============================================
   # Promote to Production
