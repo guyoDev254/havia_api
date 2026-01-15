@@ -21,6 +21,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { StorageService } from '../common/services/storage.service';
+import { UploadService } from '../upload/upload.service';
 import { multerConfig } from '../common/config/multer.config';
 
 @ApiTags('users')
@@ -31,6 +32,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly storageService: StorageService,
+    private readonly uploadService: UploadService,
   ) {}
 
   @Get('me')
@@ -177,17 +179,36 @@ export class UsersController {
         filename: file.filename,
         mimetype: file.mimetype,
         size: file.size,
+        path: file.path,
       });
 
-      // Get file URL - profile images are stored in profile-images folder
-      const fileUrl = this.storageService.getFileUrl(file.filename, 'profile-images');
+      // Process the uploaded file (uploads to Spaces if configured, otherwise uses local storage)
+      const uploadResult = await this.uploadService.processUploadedFile(file, 'profile-images');
+      const fileUrl = uploadResult.url;
       
       // Delete old profile image if exists
       const currentUser = await this.usersService.findOne(user.id);
       if (currentUser.profileImage) {
-        const oldFilename = currentUser.profileImage.split('/').pop();
-        if (oldFilename) {
-          await this.storageService.deleteFile(oldFilename, 'profile-images');
+        try {
+          // Extract filename from URL (handle both Spaces URLs and local URLs)
+          let oldFilename: string | null = null;
+          
+          if (currentUser.profileImage.includes('digitaloceanspaces.com')) {
+            // Digital Ocean Spaces URL format: https://bucket.region.digitaloceanspaces.com/profile-images/filename.jpg
+            const urlParts = currentUser.profileImage.split('/');
+            oldFilename = urlParts[urlParts.length - 1];
+          } else {
+            // Local URL format: https://api.domain.com/uploads/profile-images/filename.jpg
+            // or just filename
+            oldFilename = currentUser.profileImage.split('/').pop() || null;
+          }
+          
+          if (oldFilename) {
+            await this.uploadService.deleteFile(oldFilename, 'profile-images');
+          }
+        } catch (deleteError) {
+          // Log but don't fail if old image deletion fails
+          console.warn('Failed to delete old profile image:', deleteError);
         }
       }
       

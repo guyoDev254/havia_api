@@ -6,9 +6,10 @@ import { ProgramsModule } from './programs/programs.module';
 import { ResourcesModule } from './resources/resources.module';
 import { ClubFeaturesService } from './club-features.service';
 import { ClubFeaturesController } from './club-features.controller';
+import { BadgesModule } from '../badges/badges.module';
 
 @Module({
-  imports: [NotificationsModule, ProgramsModule, ResourcesModule],
+  imports: [NotificationsModule, ProgramsModule, ResourcesModule, BadgesModule],
   controllers: [ClubsController, ClubFeaturesController],
   providers: [ClubsService, ClubFeaturesService],
   exports: [ClubsService, ClubFeaturesService],

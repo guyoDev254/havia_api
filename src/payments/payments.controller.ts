@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsService } from '../events/events.service';
+import { BadgesService } from '../badges/badges.service';
 
 @ApiTags('payments')
 @Controller('payments')
@@ -16,6 +17,7 @@ export class PaymentsController {
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private eventsService: EventsService,
+    private badgesService: BadgesService,
   ) {}
 
   /**
@@ -122,6 +124,15 @@ export class PaymentsController {
             eventId: registration.eventId,
           });
         }
+
+        // Check and award badges automatically
+        this.badgesService.checkAndAwardBadges(registration.userId, {
+          type: 'EVENT_REGISTERED',
+          data: { eventId: registration.eventId },
+        }).catch(err => {
+          // Don't break the flow if badge awarding fails
+          this.logger.error('Error awarding badges for event registration:', err);
+        });
 
         this.logger.log(`Payment successful for registration ${registration.id}, Receipt: ${mpesaReceiptNumber}`);
       } else {

@@ -47,7 +47,7 @@ export class UploadController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
-          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp|gif)$/i }),
+          // FileTypeValidator removed - multerConfig fileFilter already handles MIME type validation
         ],
         fileIsRequired: true,
       }),
@@ -84,7 +84,7 @@ export class UploadController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB per file
-          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp|gif)$/i }),
+          // FileTypeValidator removed - multerConfig fileFilter already handles MIME type validation
         ],
         fileIsRequired: true,
       }),

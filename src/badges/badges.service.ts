@@ -144,5 +144,143 @@ export class BadgesService {
       earnedAt: userBadge.earnedAt,
     }));
   }
+
+  /**
+   * Automatically check and award badges based on user actions
+   * This method checks various criteria and awards badges accordingly
+   */
+  async checkAndAwardBadges(userId: string, action: {
+    type: 'CLUB_JOINED' | 'EVENT_REGISTERED' | 'EVENT_ATTENDED' | 'MENTORSHIP_COMPLETED' | 'FIRST_POST' | 'CLUB_CREATED';
+    data?: any;
+  }) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          userBadges: {
+            select: { badgeId: true },
+          },
+          clubMemberships: {
+            where: { isActive: true },
+            select: { clubId: true },
+          },
+          eventRegistrations: {
+            where: { status: 'CONFIRMED' },
+            select: { eventId: true },
+          },
+          mentorSessions: {
+            where: { status: 'COMPLETED' },
+            select: { id: true },
+          },
+          menteeSessions: {
+            where: { status: 'COMPLETED' },
+            select: { id: true },
+          },
+          posts: {
+            where: { isDeleted: false },
+            select: { id: true },
+          },
+        },
+      });
+
+      if (!user) return;
+
+      const allBadges = await this.prisma.badge.findMany();
+      const userBadgeIds = new Set(user.userBadges.map(ub => ub.badgeId));
+
+      // Check each badge to see if user qualifies
+      for (const badge of allBadges) {
+        // Skip if user already has this badge
+        if (userBadgeIds.has(badge.id)) continue;
+
+        let shouldAward = false;
+
+        // Check badge criteria based on badge name/description patterns
+        const badgeName = badge.name.toLowerCase();
+        const badgeDesc = (badge.description || '').toLowerCase();
+
+        // Participation badges - Club related
+        if (badgeName.includes('first club') || badgeName.includes('club member')) {
+          if (user.clubMemberships.length >= 1) {
+            shouldAward = true;
+          }
+        } else if (badgeName.includes('club enthusiast') || badgeName.includes('5 clubs')) {
+          if (user.clubMemberships.length >= 5) {
+            shouldAward = true;
+          }
+        } else if (badgeName.includes('club master') || badgeName.includes('10 clubs')) {
+          if (user.clubMemberships.length >= 10) {
+            shouldAward = true;
+          }
+        }
+
+        // Participation badges - Event related
+        if (badgeName.includes('first event') || badgeName.includes('event attendee')) {
+          if (user.eventRegistrations.length >= 1) {
+            shouldAward = true;
+          }
+        } else if (badgeName.includes('event regular') || badgeName.includes('5 events')) {
+          if (user.eventRegistrations.length >= 5) {
+            shouldAward = true;
+          }
+        } else if (badgeName.includes('event champion') || badgeName.includes('10 events')) {
+          if (user.eventRegistrations.length >= 10) {
+            shouldAward = true;
+          }
+        }
+
+        // Mentorship badges
+        if (badgeName.includes('mentorship') || badgeName.includes('mentor')) {
+          if (badgeName.includes('completed') || badgeName.includes('graduate')) {
+            const completedMentorships = [...user.mentorSessions, ...user.menteeSessions];
+            if (completedMentorships.length >= 1) {
+              shouldAward = true;
+            }
+          }
+        }
+
+        // First post badge
+        if (badgeName.includes('first post') || badgeName.includes('content creator')) {
+          if (user.posts.length >= 1) {
+            shouldAward = true;
+          }
+        }
+
+        // Action-specific badges
+        if (action.type === 'CLUB_JOINED' && (badgeName.includes('club') || badgeDesc.includes('join'))) {
+          if (user.clubMemberships.length >= 1) {
+            shouldAward = true;
+          }
+        } else if (action.type === 'EVENT_REGISTERED' && (badgeName.includes('event') || badgeDesc.includes('register'))) {
+          if (user.eventRegistrations.length >= 1) {
+            shouldAward = true;
+          }
+        } else if (action.type === 'MENTORSHIP_COMPLETED' && (badgeName.includes('mentorship') || badgeDesc.includes('complete'))) {
+          const completedMentorships = [...user.mentorSessions, ...user.menteeSessions];
+          if (completedMentorships.length >= 1) {
+            shouldAward = true;
+          }
+        } else if (action.type === 'FIRST_POST' && (badgeName.includes('post') || badgeName.includes('content'))) {
+          if (user.posts.length >= 1) {
+            shouldAward = true;
+          }
+        }
+
+        // Award the badge if criteria met
+        if (shouldAward) {
+          try {
+            await this.awardBadge(userId, badge.id);
+          } catch (error) {
+            // Silently fail if badge already awarded (race condition)
+            // or other non-critical errors
+            console.error(`Failed to award badge ${badge.id} to user ${userId}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      // Don't throw - badge awarding should not break the main flow
+      console.error(`Error checking badges for user ${userId}:`, error);
+    }
+  }
 }
 

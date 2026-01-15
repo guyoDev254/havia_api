@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsInt, IsEnum, IsBoolean, IsUrl, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsInt, IsEnum, IsBoolean, IsUrl, Min, Max, ValidateIf } from 'class-validator';
 import { MentorshipTheme, MentorshipStyle, MentorshipType } from '@prisma/client';
 
 export class CreateMentorProfileDto {
@@ -11,7 +11,8 @@ export class CreateMentorProfileDto {
   @Min(0)
   yearsOfExperience?: number;
 
-  @IsUrl()
+  @ValidateIf((o) => o.linkedIn !== undefined && o.linkedIn !== null && o.linkedIn !== '')
+  @IsUrl({ require_protocol: true }, { message: 'LinkedIn must be a valid URL starting with http:// or https://' })
   @IsOptional()
   linkedIn?: string;
 

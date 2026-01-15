@@ -73,8 +73,14 @@ export class StorageService {
 
     if (this.storageType === 'spaces' && this.spacesBucket) {
       // Use CDN URL if available, otherwise use direct Spaces URL
-      const baseUrl = this.spacesCdnUrl || `https://${this.spacesBucket}.${this.spacesRegion}.digitaloceanspaces.com`;
-      return `${baseUrl}/${folder}/${safeFilename}`;
+      if (this.spacesCdnUrl) {
+        // CDN URL format: https://bucket-name.region.cdn.digitaloceanspaces.com
+        return `${this.spacesCdnUrl}/${folder}/${safeFilename}`;
+      } else {
+        // Direct Spaces URL format: https://bucket-name.region.digitaloceanspaces.com
+        const baseUrl = `https://${this.spacesBucket}.${this.spacesRegion}.digitaloceanspaces.com`;
+        return `${baseUrl}/${folder}/${safeFilename}`;
+      }
     }
 
     // Local storage URL

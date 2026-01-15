@@ -2,12 +2,14 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { PrismaService } from '../prisma/prisma.service';
 import { ClubCategory, ClubType, ClubStatus, ClubRole, MentorshipType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { BadgesService } from '../badges/badges.service';
 
 @Injectable()
 export class ClubsService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private badgesService: BadgesService,
   ) {}
 
   async findAll(category?: ClubCategory, limit?: number, status?: ClubStatus, type?: ClubType) {
@@ -351,6 +353,15 @@ export class ClubsService {
         link: `/clubs/${clubId}`,
       });
     }
+
+    // Check and award badges automatically
+    this.badgesService.checkAndAwardBadges(userId, {
+      type: 'CLUB_JOINED',
+      data: { clubId },
+    }).catch(err => {
+      // Don't break the flow if badge awarding fails
+      console.error('Error awarding badges for club join:', err);
+    });
 
     return updatedClub;
   }

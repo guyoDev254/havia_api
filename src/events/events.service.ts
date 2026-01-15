@@ -4,6 +4,7 @@ import { EventType, EventStatus, EventSource, EventLocationType, RegistrationSta
 import { NotificationsService } from '../notifications/notifications.service';
 import { MpesaService } from '../payments/mpesa.service';
 import { EmailService } from '../common/services/email.service';
+import { BadgesService } from '../badges/badges.service';
 
 @Injectable()
 export class EventsService {
@@ -14,6 +15,7 @@ export class EventsService {
     private notificationsService: NotificationsService,
     private mpesaService: MpesaService,
     private emailService: EmailService,
+    private badgesService: BadgesService,
   ) {}
 
   async findAll(filters?: { 
@@ -464,6 +466,15 @@ export class EventsService {
           eventId: eventId,
         });
       }
+
+      // Check and award badges automatically
+      this.badgesService.checkAndAwardBadges(userId, {
+        type: 'EVENT_REGISTERED',
+        data: { eventId },
+      }).catch(err => {
+        // Don't break the flow if badge awarding fails
+        console.error('Error awarding badges for event registration:', err);
+      });
 
       return {
         registration,

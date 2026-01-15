@@ -16,6 +16,7 @@ import {
   SessionStatus,
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { BadgesService } from '../badges/badges.service';
 import { CreateMentorProfileDto } from './dto/create-mentor-profile.dto';
 import { CreateMenteeProfileDto } from './dto/create-mentee-profile.dto';
 import { CreateCycleDto } from './dto/create-cycle.dto';
@@ -27,6 +28,7 @@ export class MentorshipService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private badgesService: BadgesService,
   ) {}
 
   private async getDefaultCycleId(): Promise<string | null> {
@@ -120,10 +122,13 @@ export class MentorshipService {
       throw new BadRequestException('Mentor profile already exists');
     }
 
+    // Extract commitmentAgreed from DTO (it's not a field in MentorProfile model)
+    const { commitmentAgreed, ...profileData } = dto;
+
     return this.prisma.mentorProfile.create({
       data: {
         userId,
-        ...dto,
+        ...profileData,
         // MVP: make mentors immediately discoverable in mobile "Find a Mentor".
         // (Admin can still unverify/unlist later if needed.)
         isVerified: true,
@@ -172,9 +177,12 @@ export class MentorshipService {
   }
 
   async updateMentorProfile(userId: string, dto: Partial<CreateMentorProfileDto>) {
+    // Extract commitmentAgreed from DTO (it's not a field in MentorProfile model)
+    const { commitmentAgreed, ...profileData } = dto;
+
     return this.prisma.mentorProfile.update({
       where: { userId },
-      data: dto,
+      data: profileData,
       include: {
         user: {
           select: {
@@ -2142,6 +2150,27 @@ export class MentorshipService {
       throw new ForbiddenException('Cannot request mentorship from yourself');
     }
 
+    // Log for debugging
+    console.log('Requesting mentorship:', { menteeId, mentorId, goals });
+
+    // Verify both users exist
+    const [mentor, mentee] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: mentorId }, select: { id: true } }),
+      this.prisma.user.findUnique({ where: { id: menteeId }, select: { id: true } }),
+    ]);
+
+    console.log('User lookup results:', { mentor: mentor?.id, mentee: mentee?.id });
+
+    if (!mentor) {
+      console.error('Mentor not found for ID:', mentorId);
+      throw new NotFoundException('Mentor not found');
+    }
+
+    if (!mentee) {
+      console.error('Mentee not found for ID:', menteeId);
+      throw new NotFoundException('Mentee not found');
+    }
+
     // Check if mentorship already exists
     const existing = await this.prisma.mentorship.findFirst({
       where: {
@@ -2327,6 +2356,22 @@ export class MentorshipService {
       console.error('Certificate generation failed:', error);
     }
 
+    // Check and award badges automatically for both mentor and mentee
+    const userIdsToCheck = [mentorship.menteeId];
+    if (mentorship.mentorId) {
+      userIdsToCheck.push(mentorship.mentorId);
+    }
+
+    for (const userId of userIdsToCheck) {
+      this.badgesService.checkAndAwardBadges(userId, {
+        type: 'MENTORSHIP_COMPLETED',
+        data: { mentorshipId },
+      }).catch(err => {
+        // Don't break the flow if badge awarding fails
+        console.error(`Error awarding badges for mentorship completion (user ${userId}):`, err);
+      });
+    }
+
     // Update mentor current mentees count
     if (mentorship.mentorId) {
       await this.prisma.mentorProfile.updateMany({
@@ -2390,12 +2435,20 @@ export class MentorshipService {
       take: 50,
     });
 
-    return profiles.map((profile) => ({
-      ...profile.user,
-      ...profile,
-      expertise: profile.user.skills || [],
-      company: profile.company || profile.user.occupation || '',
-    }));
+    return profiles.map((profile) => {
+      // Extract profile.id to avoid overwriting user.id
+      const { id: profileId, ...profileWithoutId } = profile;
+      // Use user.id explicitly to ensure we return the user ID, not profile ID
+      const userId = profile.user.id;
+      return {
+        ...profile.user,
+        ...profileWithoutId,
+        // Ensure id is the user ID, not the profile ID
+        id: userId,
+        expertise: profile.user.skills || [],
+        company: profile.company || profile.user.occupation || '',
+      };
+    });
   }
 
   async applyMentor(

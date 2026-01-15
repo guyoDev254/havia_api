@@ -5,9 +5,10 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { EmailService } from '../common/services/email.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { BadgesModule } from '../badges/badges.module';
 
 @Module({
-  imports: [NotificationsModule, forwardRef(() => PaymentsModule)],
+  imports: [NotificationsModule, forwardRef(() => PaymentsModule), BadgesModule],
   controllers: [EventsController],
   providers: [EventsService, EmailService, PrismaService],
   exports: [EventsService],
