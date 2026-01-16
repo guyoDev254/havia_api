@@ -89,6 +89,11 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Generate date tag
+        id: date_tag
+        run: |
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -97,8 +102,8 @@ jobs:
           tags: |
             type=raw,value=latest
             type=raw,value=dev-latest
-            type=raw,value={{date 'YYYY-MM-DD'}}
-            type=raw,value={{date 'YYYY-MM-DD'}}-${{ github.run_number }}
+            type=raw,value=${{ steps.date_tag.outputs.date }}
+            type=raw,value=${{ steps.date_tag.outputs.date }}-${{ github.run_number }}
             type=raw,value=build-${{ github.run_number }}
             type=sha,prefix=dev-,format=short
             type=ref,event=branch
@@ -111,6 +116,7 @@ jobs:
           echo "${{ steps.meta.outputs.labels }}"
 
       - name: Build and push Docker image (multi-platform)
+        id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -124,16 +130,28 @@ jobs:
           build-args: |
             NODE_ENV=test
           
-      - name: Verify image tags
+      - name: Verify image was pushed
         run: |
-          echo "Verifying pushed tags..."
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev:latest || echo "Note: latest tag may not be immediately available"
+          echo "Checking if image was pushed successfully..."
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev"
+          echo "Tags pushed: ${{ steps.meta.outputs.tags }}"
+          
+      - name: List pushed images
+        run: |
+          echo "Pushed images summary:"
+          echo "- Repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-dev"
+          echo "- Tags:"
+          echo "${{ steps.meta.outputs.tags }}" | while read tag; do
+            echo "  - $tag"
+          done
 
   docker-build-production:
     name: Build & Push Docker Image (Production)
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    if: |
+      (github.ref == 'refs/heads/main' || 
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'))
     environment:
       name: production
     steps:
@@ -157,6 +175,11 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Generate date tag
+        id: date_tag
+        run: |
+          echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -165,8 +188,8 @@ jobs:
           tags: |
             type=raw,value=latest
             type=raw,value=prod-latest
-            type=raw,value={{date 'YYYY-MM-DD'}}
-            type=raw,value={{date 'YYYY-MM-DD'}}-${{ github.run_number }}
+            type=raw,value=${{ steps.date_tag.outputs.date }}
+            type=raw,value=${{ steps.date_tag.outputs.date }}-${{ github.run_number }}
             type=raw,value=build-${{ github.run_number }}
             type=semver,pattern={{version}}
             type=sha,prefix=prod-,format=short
@@ -180,6 +203,7 @@ jobs:
           echo "${{ steps.meta.outputs.labels }}"
 
       - name: Build and push Docker image (multi-platform)
+        id: docker_build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -193,10 +217,20 @@ jobs:
           build-args: |
             NODE_ENV=production
           
-      - name: Verify image tags
+      - name: Verify image was pushed
         run: |
-          echo "Verifying pushed tags..."
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest || echo "Note: latest tag may not be immediately available"
+          echo "Checking if image was pushed successfully..."
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "Tags pushed: ${{ steps.meta.outputs.tags }}"
+          
+      - name: List pushed images
+        run: |
+          echo "Pushed images summary:"
+          echo "- Repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "- Tags:"
+          echo "${{ steps.meta.outputs.tags }}" | while read tag; do
+            echo "  - $tag"
+          done
 
   # ============================================
   # Promote to Production
