@@ -14,13 +14,10 @@ services:
       - uploads_data:/app/uploads
     networks:
       - havia-network
-    command: >
-      sh -c "
-        echo 'Running database migrations...' &&
-        npx prisma migrate deploy &&
-        echo 'Starting API server...' &&
-        node dist/src/main.js
-      "
+    # Entrypoint script handles migrations automatically
+    # You can disable migrations by setting RUN_MIGRATIONS=false
+    environment:
+      - RUN_MIGRATIONS=true
 
 volumes:
   uploads_data:

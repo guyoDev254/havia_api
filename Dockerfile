@@ -51,8 +51,13 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 # Create uploads directory
 RUN mkdir -p uploads/profile-images uploads/images uploads/files uploads/resources uploads/club-logos uploads/club-banners
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Set environment to production
 ENV NODE_ENV=production
+ENV RUN_MIGRATIONS=true
 
 # Expose port
 EXPOSE 6000
@@ -60,6 +65,9 @@ EXPOSE 6000
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:6000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+# Set entrypoint to handle migrations and startup
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Start the application with memory limits and garbage collection enabled
 CMD ["node", "--max-old-space-size=1536", "--expose-gc", "dist/src/main"]
