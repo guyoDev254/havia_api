@@ -315,6 +315,7 @@ model User {
   posts                      Post[]                      @relation("UserPosts")
   comments                   Comment[]                   @relation("UserComments")
   postReactions              PostReaction[]              @relation("UserPostReactions")
+  commentReactions           CommentReaction[]           @relation("UserCommentReactions")
   adminAuditLogs             AuditLog[]                  @relation("AdminAuditLogs")
   userAuditLogs              AuditLog[]                  @relation("UserAuditLogs")
   ledClubs                   Club[]                      @relation("ClubLeads")
@@ -1639,13 +1640,31 @@ model Comment {
   updatedAt DateTime @updatedAt
 
   // Relations
-  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author User @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
+  post      Post            @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User            @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
+  reactions CommentReaction[]
 
   @@index([postId])
   @@index([userId])
   @@index([createdAt])
   @@map("comments")
+}
+
+model CommentReaction {
+  id        String   @id @default(uuid())
+  commentId String
+  userId    String
+  type      String   @default("LIKE") // For comments, only LIKE is supported
+  createdAt DateTime @default(now())
+
+  // Relations
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserCommentReactions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@index([userId])
+  @@map("comment_reactions")
 }
 
 model PostReaction {
@@ -1800,6 +1819,7 @@ model Scholarship {
   deadline       DateTime
   applicationUrl String? // External application link
   isActive       Boolean         @default(true)
+  isPartnership  Boolean         @default(false) // NorthernBox partnership scholarship; applications on website & mobile
   category       String? // e.g., "Academic", "Sports", "Need-based"
   level          EducationLevel? // SECONDARY, TVET, UNIVERSITY, OUT_OF_SCHOOL
   createdAt      DateTime        @default(now())
@@ -1823,6 +1843,49 @@ model ScholarshipApplication {
 
   @@unique([userId, scholarshipId])
   @@map("scholarship_applications")
+}
+
+model DataCampDonatesApplication {
+  id             String    @id @default(uuid())
+  fullName       String
+  email          String
+  dateOfBirth    DateTime?
+  cityOfResidence String
+  motivationForDataScience String @db.Text
+  howEnvisionLeveraging   String @db.Text
+  previousCoursesOrProjects String // Yes, No, Maybe
+  whyDeserveScholarship   String @db.Text
+  usedDataCampBefore     String? // Yes, No, Maybe
+  currentSituation       String? // Unemployed, Living below..., Refugee..., Student
+  dataCampCompletionDetails String? @db.Text
+  highestEducationLevel  String? // High School, Diploma, Bachelors, Masters, Other, None
+  educationDetails       String? @db.Text
+  scholarshipContribution String? @db.Text
+  challengesOrObstacles   String @db.Text
+  areasOfInterest        String @db.Text
+  participatedInProjects String // Yes, No, Maybe
+  projectsDetails        String? @db.Text
+  planToContribute       String? @db.Text
+  affiliatedWithInstitutions String // Yes, No, Maybe
+  affiliationDetails     String? @db.Text
+  goalsThisYear          String? @db.Text
+  howFreeAccessWillHelp  String? @db.Text
+  hoursPerWeek           String // 1-2 hrs, 3-4 hrs, 5-6 hrs, 7 and More
+  otherInfo              String? @db.Text
+  howDidYouHear          String? @db.Text
+  internetAccess         String? // Yes, No, Maybe
+  computerAccess         String? // Yes, No, Maybe
+  additionalUploadDetails String? @db.Text
+  status         String    @default("PENDING")
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("datacamp_donates_applications")
 }
 
 model StudyGroup {

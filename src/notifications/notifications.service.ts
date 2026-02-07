@@ -153,6 +153,10 @@ export class NotificationsService {
           body,
           data: data || {},
           badge: 1,
+          // High priority so the notification shows as popup/heads-up and plays sound
+          priority: 'high' as const,
+          // Android: use default channel (configured in app with sound + vibrate)
+          channelId: 'default',
         },
       ];
 

@@ -841,11 +841,56 @@ export class AdminController {
     );
   }
 
+  @Get('scholarships/:id')
+  @ApiOperation({ summary: 'Get a scholarship by ID' })
+  @RequirePermissions(Permission.VIEW_ANALYTICS)
+  async getScholarship(@Param('id') id: string) {
+    return this.adminService.getScholarshipById(id);
+  }
+
   @Put('scholarships/applications/:id/status')
   @ApiOperation({ summary: 'Update application status' })
   @RequirePermissions(Permission.MANAGE_USERS)
   async updateApplicationStatus(@Param('id') id: string, @Body('status') status: string) {
     return this.adminService.updateApplicationStatus(id, status);
+  }
+
+  @Get('datacamp-donates/applications')
+  @ApiOperation({ summary: 'List DataCamp Donates applications' })
+  @RequirePermissions(Permission.VIEW_ANALYTICS)
+  async getDataCampApplications(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.getDataCampApplications(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 20,
+      status,
+    );
+  }
+
+  @Get('datacamp-donates/applications/:id')
+  @ApiOperation({ summary: 'Get DataCamp Donates application by ID' })
+  @RequirePermissions(Permission.VIEW_ANALYTICS)
+  async getDataCampApplication(@Param('id') id: string) {
+    return this.adminService.getDataCampApplicationById(id);
+  }
+
+  @Put('datacamp-donates/applications/:id/status')
+  @ApiOperation({ summary: 'Update DataCamp Donates application status' })
+  @RequirePermissions(Permission.MANAGE_USERS)
+  async updateDataCampApplicationStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string; notes?: string },
+    @CurrentUser() user: any,
+  ) {
+    return this.adminService.updateDataCampApplicationStatus(
+      id,
+      body.status,
+      user.id,
+      body.notes,
+    );
   }
 
   // Study Groups Management

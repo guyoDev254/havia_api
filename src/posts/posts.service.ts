@@ -309,6 +309,17 @@ export class PostsService {
                 profileImage: true,
               },
             },
+            _count: {
+              select: {
+                reactions: true,
+              },
+            },
+            reactions: userId
+              ? {
+                  where: { userId },
+                  select: { userId: true, type: true },
+                }
+              : false,
           },
         },
         _count: {
@@ -511,7 +522,7 @@ export class PostsService {
     return comment;
   }
 
-  async getComments(postId: string, limit = 20, cursor?: string) {
+  async getComments(postId: string, limit = 20, cursor?: string, userId?: string) {
     const comments = await this.prisma.comment.findMany({
       where: {
         postId,
@@ -529,6 +540,17 @@ export class PostsService {
             profileImage: true,
           },
         },
+        _count: {
+          select: {
+            reactions: true,
+          },
+        },
+        reactions: userId
+          ? {
+              where: { userId },
+              select: { userId: true, type: true },
+            }
+          : false,
       },
     });
 
@@ -561,6 +583,63 @@ export class PostsService {
       where: { id: commentId },
       data: { isDeleted: true },
     });
+  }
+
+  async reactToComment(commentId: string, userId: string, type: 'LIKE') {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+    });
+
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    if (comment.isDeleted) {
+      throw new BadRequestException('Cannot react to deleted comment');
+    }
+
+    const existingReaction = await this.prisma.commentReaction.findUnique({
+      where: {
+        commentId_userId: {
+          commentId,
+          userId,
+        },
+      },
+    });
+
+    if (existingReaction) {
+      // Remove reaction if already exists (unlike)
+      await this.prisma.commentReaction.delete({
+        where: {
+          commentId_userId: {
+            commentId,
+            userId,
+          },
+        },
+      });
+      return { reacted: false, type: null };
+    }
+
+    // Create new reaction (like)
+    await this.prisma.commentReaction.create({
+      data: {
+        commentId,
+        userId,
+        type,
+      },
+    });
+
+    // Notify comment author (if not own comment)
+    if (comment.userId !== userId) {
+      await this.notificationsService.createAndSend(comment.userId, {
+        title: 'New Reaction',
+        message: `Someone liked your comment`,
+        type: 'OTHER',
+        link: `/posts/${comment.postId}`,
+      });
+    }
+
+    return { reacted: true, type };
   }
 
   async getReactions(postId: string) {

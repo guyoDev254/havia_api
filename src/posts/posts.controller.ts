@@ -99,8 +99,9 @@ export class PostsController {
     @Param('id') id: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
+    @CurrentUser() user?: any,
   ) {
-    return this.postsService.getComments(id, limit ? parseInt(limit) : 20, cursor);
+    return this.postsService.getComments(id, limit ? parseInt(limit) : 20, cursor, user?.id);
   }
 
   @Post(':id/comments')
@@ -121,6 +122,19 @@ export class PostsController {
   @ApiOperation({ summary: 'Delete a comment' })
   async deleteComment(@Param('id') id: string, @CurrentUser() user: any) {
     return this.postsService.deleteComment(id, user.id);
+  }
+
+  @Post('comments/:id/react')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'React to a comment (like)' })
+  @ApiQuery({ name: 'type', enum: ['LIKE'], description: 'Reaction type (only LIKE supported for comments)' })
+  async reactToComment(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Query('type') type: 'LIKE',
+  ) {
+    return this.postsService.reactToComment(id, user.id, type);
   }
 
   @Get(':id/reactions')

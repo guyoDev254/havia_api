@@ -2790,6 +2790,16 @@ export class AdminService {
     };
   }
 
+  async getScholarshipById(id: string) {
+    const scholarship = await this.prisma.scholarship.findUnique({
+      where: { id },
+    });
+    if (!scholarship) {
+      throw new NotFoundException('Scholarship not found');
+    }
+    return scholarship;
+  }
+
   async createScholarship(data: {
     title: string;
     description: string;
@@ -2801,6 +2811,7 @@ export class AdminService {
     applicationUrl?: string;
     category?: string;
     level?: string;
+    isPartnership?: boolean;
   }) {
     return this.prisma.scholarship.create({
       data: {
@@ -2822,6 +2833,7 @@ export class AdminService {
     category: string;
     level: string;
     isActive: boolean;
+    isPartnership: boolean;
   }>) {
     return this.prisma.scholarship.update({
       where: { id },
@@ -2835,6 +2847,46 @@ export class AdminService {
   async deleteScholarship(id: string) {
     return this.prisma.scholarship.delete({
       where: { id },
+    });
+  }
+
+  // DataCamp Donates applications
+  async getDataCampApplications(page = 1, limit = 20, status?: string) {
+    const skip = (page - 1) * limit;
+    const where = status ? { status } : {};
+    const [applications, total] = await Promise.all([
+      this.prisma.dataCampDonatesApplication.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.dataCampDonatesApplication.count({ where }),
+    ]);
+    return {
+      applications,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async getDataCampApplicationById(id: string) {
+    const app = await this.prisma.dataCampDonatesApplication.findUnique({
+      where: { id },
+    });
+    if (!app) throw new NotFoundException('DataCamp Donates application not found');
+    return app;
+  }
+
+  async updateDataCampApplicationStatus(id: string, status: string, reviewedBy: string, notes?: string) {
+    await this.getDataCampApplicationById(id);
+    return this.prisma.dataCampDonatesApplication.update({
+      where: { id },
+      data: {
+        status,
+        reviewedBy,
+        reviewedAt: new Date(),
+        notes: notes ?? undefined,
+      },
     });
   }
 

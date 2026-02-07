@@ -1,25 +1,44 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
+// Single Prisma client with connection_limit=1 (set in main() after env is loaded)
+let prisma: PrismaClient;
 
-// Helper function to process promises in batches to reduce memory usage
+function createPrisma(): PrismaClient {
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (!dbUrl) {
+    throw new Error('DATABASE_URL is not set. Create a .env file with DATABASE_URL.');
+  }
+  // Use exactly 1 connection to stay under strict DB limits (e.g. DigitalOcean).
+  // Seed runs sequentially via processInBatches(..., 1, ...) and sequential Promise.all replacements.
+  const separator = dbUrl.includes('?') ? '&' : '?';
+  const seedDbUrl = `${dbUrl}${separator}connection_limit=1&pool_timeout=60`;
+  return new PrismaClient({
+    datasources: {
+      db: { url: seedDbUrl },
+    },
+  });
+}
+
+// Run items sequentially (batchSize 1) to avoid exhausting DB connections when connection_limit=1.
 async function processInBatches<T>(
   items: T[],
-  batchSize: number,
+  _batchSize: number,
   processor: (item: T) => Promise<any>
 ): Promise<any[]> {
   const results: any[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.all(batch.map(processor));
-    results.push(...batchResults);
+  for (const item of items) {
+    results.push(await processor(item));
   }
   return results;
 }
 
 async function main() {
   console.log('🌱 Starting seed...');
+  console.log('   Using connection_limit=1 (sequential) to avoid exhausting DB connection slots.');
+  console.log('   Stop the API server and Prisma Studio before seeding.\n');
+
+  prisma = createPrisma();
 
   // Clear existing data
   console.log('🧹 Clearing existing data...');
@@ -1614,6 +1633,7 @@ async function main() {
         ],
         deadline: new Date(seedNow.getTime() + 60 * 24 * 60 * 60 * 1000), // 60 days from now
         isActive: true,
+        isPartnership: true,
         category: 'Academic',
         level: 'UNIVERSITY',
       },
@@ -4594,6 +4614,6 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    if (prisma) await prisma.$disconnect();
   });
 

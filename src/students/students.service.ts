@@ -937,6 +937,14 @@ export class StudentsService {
       throw new ForbiddenException('Only group leaders can create meetups');
     }
 
+    const startDate = new Date(data.startDate);
+    if (startDate < new Date()) {
+      throw new BadRequestException('Start date and time must be today or in the future');
+    }
+    if (data.endDate && new Date(data.endDate) < startDate) {
+      throw new BadRequestException('End date must be after start date');
+    }
+
     const meetup = await this.prisma.studyGroupMeetup.create({
       data: {
         studyGroupId,
@@ -1153,6 +1161,20 @@ export class StudentsService {
     const member = meetup.studyGroup.members[0];
     if (!member || member.role !== 'LEADER') {
       throw new ForbiddenException('Only group leaders can update meetups');
+    }
+
+    if (data.startDate !== undefined) {
+      const startDate = new Date(data.startDate);
+      if (startDate < new Date()) {
+        throw new BadRequestException('Start date and time must be today or in the future');
+      }
+      if (data.endDate !== undefined && new Date(data.endDate) < startDate) {
+        throw new BadRequestException('End date must be after start date');
+      }
+    } else if (data.endDate !== undefined && meetup.startDate) {
+      if (new Date(data.endDate) < new Date(meetup.startDate)) {
+        throw new BadRequestException('End date must be after start date');
+      }
     }
 
     // If updating maxAttendees, ensure it's not less than current attendee count

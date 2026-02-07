@@ -1954,7 +1954,7 @@ export class MentorshipService {
 
     const isMentor = mentorship.mentorId === evaluatorId;
 
-    return this.prisma.mentorshipEvaluation.upsert({
+    const evaluation = await this.prisma.mentorshipEvaluation.upsert({
       where: {
         mentorshipId_type_evaluatorId: {
           mentorshipId,
@@ -1976,6 +1976,67 @@ export class MentorshipService {
         submittedAt: new Date(),
       },
     });
+
+    // If mentee submitted evaluation, update mentor rating
+    if (!isMentor && (data.satisfactionRating || data.engagementRating || data.progressRating)) {
+      await this.updateMentorRating(mentorship.mentorId);
+    }
+
+    return evaluation;
+  }
+
+  /**
+   * Calculate and update mentor rating based on all mentee evaluations
+   */
+  private async updateMentorRating(mentorId: string) {
+    // Get all mentee evaluations for this mentor's active/completed mentorships
+    const mentorships = await this.prisma.mentorship.findMany({
+      where: {
+        mentorId,
+        status: { in: [MentorshipStatus.ACTIVE, MentorshipStatus.COMPLETED] },
+      },
+      include: {
+        evaluations: {
+          where: {
+            isMentor: false, // Only mentee evaluations
+          },
+        },
+      },
+    });
+
+    // Collect all ratings from mentee evaluations
+    const ratings: number[] = [];
+    mentorships.forEach((mentorship) => {
+      mentorship.evaluations.forEach((evaluation) => {
+        // Use satisfaction rating as primary, fallback to average of all ratings
+        if (evaluation.satisfactionRating) {
+          ratings.push(evaluation.satisfactionRating);
+        } else if (evaluation.engagementRating || evaluation.progressRating || evaluation.skillImprovement) {
+          const ratingValues = [
+            evaluation.engagementRating,
+            evaluation.progressRating,
+            evaluation.skillImprovement,
+          ].filter((r) => r !== null && r !== undefined) as number[];
+          if (ratingValues.length > 0) {
+            const avg = ratingValues.reduce((sum, r) => sum + r, 0) / ratingValues.length;
+            ratings.push(avg);
+          }
+        }
+      });
+    });
+
+    // Calculate average rating (scale 1-5, convert to 0-5 scale for storage)
+    let averageRating = 0;
+    if (ratings.length > 0) {
+      const sum = ratings.reduce((acc, r) => acc + r, 0);
+      averageRating = sum / ratings.length;
+    }
+
+    // Update mentor profile rating
+    await this.prisma.mentorProfile.update({
+      where: { userId: mentorId },
+      data: { rating: averageRating },
+    });
   }
 
   async getEvaluations(mentorshipId: string) {
@@ -1983,6 +2044,71 @@ export class MentorshipService {
       where: { mentorshipId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Submit simple feedback from mentee about mentor (doesn't require programId)
+   */
+  async submitMentorFeedback(
+    mentorshipId: string,
+    menteeId: string,
+    data: {
+      rating: number; // 1-5 overall rating
+      feedback?: string;
+      wouldRecommend?: boolean;
+    },
+  ) {
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      include: {
+        programs: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!mentorship) {
+      throw new NotFoundException('Mentorship not found');
+    }
+
+    if (mentorship.menteeId !== menteeId) {
+      throw new ForbiddenException('Only the mentee can submit feedback about the mentor');
+    }
+
+    // Create or update a FINAL evaluation with the feedback
+    // Use a default programId if available, otherwise null
+    const programId = mentorship.programs?.[0]?.id || null;
+
+    const evaluation = await this.prisma.mentorshipEvaluation.upsert({
+      where: {
+        mentorshipId_type_evaluatorId: {
+          mentorshipId,
+          type: EvaluationType.FINAL,
+          evaluatorId: menteeId,
+        },
+      },
+      create: {
+        mentorshipId,
+        programId,
+        type: EvaluationType.FINAL,
+        evaluatorId: menteeId,
+        isMentor: false,
+        satisfactionRating: data.rating,
+        feedback: data.feedback,
+        submittedAt: new Date(),
+      },
+      update: {
+        satisfactionRating: data.rating,
+        feedback: data.feedback,
+        submittedAt: new Date(),
+      },
+    });
+
+    // Update mentor rating
+    await this.updateMentorRating(mentorship.mentorId);
+
+    return evaluation;
   }
 
   // ==================== CERTIFICATE GENERATION ====================

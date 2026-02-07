@@ -326,6 +326,20 @@ export class MentorshipController {
     return this.mentorshipService.getEvaluations(mentorshipId);
   }
 
+  @Post('feedback/:mentorshipId')
+  @ApiOperation({ summary: 'Submit feedback about mentor (mentee only, simpler than evaluation)' })
+  async submitMentorFeedback(
+    @CurrentUser() user: any,
+    @Param('mentorshipId') mentorshipId: string,
+    @Body() data: {
+      rating: number; // 1-5 overall rating
+      feedback?: string;
+      wouldRecommend?: boolean;
+    },
+  ) {
+    return this.mentorshipService.submitMentorFeedback(mentorshipId, user.id, data);
+  }
+
   // ==================== CERTIFICATES ====================
 
   @Post('certificates/:mentorshipId')

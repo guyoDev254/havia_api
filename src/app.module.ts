@@ -24,6 +24,7 @@ import { ContentModule } from './content/content.module';
 import { TasksModule } from './tasks/tasks.module';
 import { PaymentsModule } from './payments/payments.module';
 import { FaqsModule } from './faqs/faqs.module';
+import { DataCampApplicationsModule } from './datacamp-applications/datacamp-applications.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { FaqsModule } from './faqs/faqs.module';
     TasksModule,
     PaymentsModule,
     FaqsModule,
+    DataCampApplicationsModule,
   ],
 })
 export class AppModule {}
