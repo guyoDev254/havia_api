@@ -51,19 +51,68 @@ export class DataCampApplicationsService {
     try {
       const name = dto.fullName?.trim() || 'Applicant';
       const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #0284c7;">Application Received – DataCamp Donates Scholarship</h2>
-          <p>Hello ${name},</p>
-          <p>Thank you for applying for the DataCamp Donates scholarship through NorthernBox. We have received your application.</p>
-          <p>Our team will review it and get back to you. You can expect to hear from us once the review is complete.</p>
-          <p>If you have any questions in the meantime, please reach out through our contact page.</p>
-          <p>Best regards,<br><strong>The NorthernBox Team</strong></p>
-        </div>
-      `;
-      const text = `Application Received – DataCamp Donates Scholarship\n\nHello ${name},\n\nThank you for applying for the DataCamp Donates scholarship through NorthernBox. We have received your application.\n\nOur team will review it and get back to you. You can expect to hear from us once the review is complete.\n\nIf you have any questions in the meantime, please reach out through our contact page.\n\nBest regards,\nThe NorthernBox Team`;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Application Received – DataCamp Donates</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6; padding: 24px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          <tr>
+            <td style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 24px 32px; text-align: center;">
+              <span style="font-size: 22px; font-weight: 700; color: #ffffff;">NorthernBox</span>
+              <p style="margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.9);">Empowering Northern Kenya's youth</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 32px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="padding: 20px; background-color: #f0f9ff; border-left: 4px solid #0284c7; border-radius: 0 8px 8px 0;">
+                    <p style="margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Scholarship</p>
+                    <p style="margin: 4px 0 0; font-size: 18px; font-weight: 600; color: #111827;">DataCamp Donates × NorthernBox</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 24px 0 0;">
+                    <h1 style="margin: 0 0 20px; font-size: 20px; font-weight: 600; color: #111827;">We received your application</h1>
+                    <p style="margin: 0 0 16px; font-size: 16px; color: #374151; line-height: 1.6;">Hello ${name},</p>
+                    <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Thank you for applying for the <strong>DataCamp Donates</strong> scholarship through NorthernBox. We have received your application.</p>
+                    <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Our team will review it and get back to you. You can expect to hear from us once the review is complete. If your application is approved, you will receive instructions on how to access DataCamp and start learning.</p>
+                    <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">If you have any questions in the meantime, please reach out through our <a href="https://northernbox.co.ke/contact" style="color: #0284c7; text-decoration: none;">contact page</a>.</p>
+                    <p style="margin: 24px 0 0; font-size: 16px; color: #111827;">Best regards,<br><strong>The NorthernBox Team</strong></p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 32px; background-color: #f9fafb; border-top: 1px solid #e0f2fe;">
+              <p style="margin: 0 0 8px; font-size: 14px; color: #6b7280;">Need help?</p>
+              <p style="margin: 0; font-size: 14px;">
+                <a href="https://northernbox.co.ke/contact" style="color: #0284c7; text-decoration: none;">Contact us</a>
+                &nbsp;·&nbsp;
+                <a href="https://northernbox.co.ke" style="color: #0284c7; text-decoration: none;">northernbox.co.ke</a>
+              </p>
+              <p style="margin: 20px 0 0; font-size: 12px; color: #9ca3af;">© ${new Date().getFullYear()} NorthernBox. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+      `.trim();
+      const text = `NorthernBox – Application Received\n\nHello ${name},\n\nThank you for applying for the DataCamp Donates scholarship through NorthernBox. We have received your application. Our team will review it and get back to you. If approved, you will receive instructions on how to access DataCamp.\n\nContact us: https://northernbox.co.ke/contact\n\nBest regards,\nThe NorthernBox Team`;
       await this.emailService.sendEmail(
         dto.email,
-        'We received your DataCamp Donates scholarship application',
+        'We received your DataCamp Donates scholarship application – NorthernBox',
         html,
         text,
       );

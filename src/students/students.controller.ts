@@ -71,6 +71,7 @@ export class StudentsController {
     return this.studentsService.getScholarships(
       level,
       isActive !== 'false',
+      'mobile',
     );
   }
 

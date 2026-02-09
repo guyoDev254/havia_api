@@ -851,8 +851,16 @@ export class AdminController {
   @Put('scholarships/applications/:id/status')
   @ApiOperation({ summary: 'Update application status' })
   @RequirePermissions(Permission.MANAGE_USERS)
-  async updateApplicationStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.adminService.updateApplicationStatus(id, status);
+  async updateApplicationStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string; reason?: string; nextInstructions?: string },
+  ) {
+    return this.adminService.updateApplicationStatus(
+      id,
+      body.status,
+      body.reason,
+      body.nextInstructions,
+    );
   }
 
   @Get('datacamp-donates/applications')
@@ -882,7 +890,7 @@ export class AdminController {
   @RequirePermissions(Permission.MANAGE_USERS)
   async updateDataCampApplicationStatus(
     @Param('id') id: string,
-    @Body() body: { status: string; notes?: string },
+    @Body() body: { status: string; notes?: string; reason?: string; nextInstructions?: string },
     @CurrentUser() user: any,
   ) {
     return this.adminService.updateDataCampApplicationStatus(
@@ -890,6 +898,8 @@ export class AdminController {
       body.status,
       user.id,
       body.notes,
+      body.reason,
+      body.nextInstructions,
     );
   }
 

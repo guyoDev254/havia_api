@@ -205,10 +205,20 @@ export class StudentsService {
   }
 
   // Scholarships
-  async getScholarships(level?: EducationLevel, isActive = true) {
+  async getScholarships(
+    level?: EducationLevel,
+    isActive = true,
+    platform?: 'web' | 'mobile',
+  ) {
     const where: any = { isActive };
     if (level) {
       where.level = level;
+    }
+    // Filter by visibility: mobile app only sees "both", web sees "web" and "both"
+    if (platform === 'mobile') {
+      where.visibility = 'both';
+    } else if (platform === 'web') {
+      where.visibility = { in: ['web', 'both'] };
     }
 
     return this.prisma.scholarship.findMany({

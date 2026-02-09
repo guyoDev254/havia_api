@@ -1820,6 +1820,7 @@ model Scholarship {
   applicationUrl String? // External application link
   isActive       Boolean         @default(true)
   isPartnership  Boolean         @default(false) // NorthernBox partnership scholarship; applications on website & mobile
+  visibility     String          @default("both") // "web" = NBC website only, "both" = website + mobile app
   category       String? // e.g., "Academic", "Sports", "Need-based"
   level          EducationLevel? // SECONDARY, TVET, UNIVERSITY, OUT_OF_SCHOOL
   createdAt      DateTime        @default(now())

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole, MentorshipStatus, NotificationType, MatchStatus } from '@prisma/client';
 import {
@@ -17,6 +17,8 @@ import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private prisma: PrismaService,
     private encryptionService: EncryptionService,
@@ -2812,11 +2814,13 @@ export class AdminService {
     category?: string;
     level?: string;
     isPartnership?: boolean;
+    visibility?: string;
   }) {
     return this.prisma.scholarship.create({
       data: {
         ...data,
         level: data.level as any,
+        visibility: data.visibility ?? 'both',
       },
     });
   }
@@ -2834,6 +2838,7 @@ export class AdminService {
     level: string;
     isActive: boolean;
     isPartnership: boolean;
+    visibility: string;
   }>) {
     return this.prisma.scholarship.update({
       where: { id },
@@ -2877,9 +2882,16 @@ export class AdminService {
     return app;
   }
 
-  async updateDataCampApplicationStatus(id: string, status: string, reviewedBy: string, notes?: string) {
-    await this.getDataCampApplicationById(id);
-    return this.prisma.dataCampDonatesApplication.update({
+  async updateDataCampApplicationStatus(
+    id: string,
+    status: string,
+    reviewedBy: string,
+    notes?: string,
+    reason?: string,
+    nextInstructions?: string,
+  ) {
+    const app = await this.getDataCampApplicationById(id);
+    const updated = await this.prisma.dataCampDonatesApplication.update({
       where: { id },
       data: {
         status,
@@ -2888,6 +2900,62 @@ export class AdminService {
         notes: notes ?? undefined,
       },
     });
+    if (status === 'APPROVED' || status === 'REJECTED') {
+      this.sendDataCampStatusEmail(
+        app.email,
+        app.fullName || 'Applicant',
+        status,
+        reason,
+        nextInstructions,
+      ).catch((err) =>
+        this.logger.error(`Failed to send DataCamp status email to ${app.email}:`, err),
+      );
+    }
+    return updated;
+  }
+
+  private async sendDataCampStatusEmail(
+    email: string,
+    name: string,
+    status: string,
+    reason?: string,
+    nextInstructions?: string,
+  ): Promise<void> {
+    const isApproved = status === 'APPROVED';
+    const subject = isApproved
+      ? 'Your DataCamp Donates application has been approved – NorthernBox'
+      : 'Update on your DataCamp Donates application – NorthernBox';
+    const defaultApproved = `
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Your application for the <strong>DataCamp Donates</strong> scholarship has been approved. You now have access to data skills training through our partnership with DataCamp.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;"><strong>What happens next:</strong></p>
+        <ul style="margin: 0 0 16px; padding-left: 20px; color: #374151; line-height: 1.6;">
+          <li>You will receive a separate email with your DataCamp access details and login instructions.</li>
+          <li>Log in and explore courses in Python, R, data science, and machine learning.</li>
+          <li>Track your progress and complete learning paths at your own pace.</li>
+        </ul>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">If you do not receive access details within a few days, please reply to this email or contact us through our website.</p>
+      `;
+    const defaultRejected = `
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Thank you for applying for the <strong>DataCamp Donates</strong> scholarship through NorthernBox. After careful review of all applications, we are unable to offer you a place in this round.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">We receive many strong applications and have limited spots. We encourage you to apply again when we open the next application window and to explore other NorthernBox opportunities.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">We wish you the best in your learning journey.</p>
+      `;
+    const html = this.buildScholarshipEmailHtml({
+      recipientName: name,
+      scholarshipTitle: 'DataCamp Donates × NorthernBox',
+      isApproved,
+      reason,
+      nextInstructions,
+      approvedContent: defaultApproved,
+      rejectedContent: defaultRejected,
+    });
+    let text = isApproved
+      ? `NorthernBox – DataCamp Donates Application Approved\n\nHello ${name},\n\nYour application for the DataCamp Donates scholarship has been approved.`
+      : `NorthernBox – Update on Your DataCamp Donates Application\n\nHello ${name},\n\nThank you for applying for the DataCamp Donates scholarship. After careful review, we are unable to offer you a place in this round.`;
+    if (reason?.trim()) text += `\n\nMessage from our team:\n${reason.trim()}`;
+    if (nextInstructions?.trim()) text += `\n\nNext steps:\n${nextInstructions.trim()}`;
+    text += `\n\nBest regards,\nThe NorthernBox Team\nhttps://northernbox.co.ke`;
+    await this.emailService.sendEmail(email, subject, html, text);
   }
 
   async getScholarshipApplications(
@@ -2940,11 +3008,177 @@ export class AdminService {
     };
   }
 
-  async updateApplicationStatus(id: string, status: string) {
-    return this.prisma.scholarshipApplication.update({
+  async updateApplicationStatus(
+    id: string,
+    status: string,
+    reason?: string,
+    nextInstructions?: string,
+  ) {
+    const existing = await this.prisma.scholarshipApplication.findUnique({
+      where: { id },
+      include: {
+        user: { select: { email: true, firstName: true, lastName: true } },
+        scholarship: { select: { title: true } },
+      },
+    });
+    if (!existing) throw new NotFoundException('Scholarship application not found');
+    const updated = await this.prisma.scholarshipApplication.update({
       where: { id },
       data: { status: status as any },
     });
+    if ((status === 'APPROVED' || status === 'REJECTED') && existing.user?.email) {
+      const name = [existing.user.firstName, existing.user.lastName].filter(Boolean).join(' ') || 'Applicant';
+      this.sendScholarshipStatusEmail(
+        existing.user.email,
+        name,
+        existing.scholarship.title,
+        status,
+        reason,
+        nextInstructions,
+      ).catch((err) =>
+        this.logger.error(`Failed to send scholarship status email to ${existing.user?.email}:`, err),
+      );
+    }
+    return updated;
+  }
+
+  private async sendScholarshipStatusEmail(
+    email: string,
+    name: string,
+    scholarshipTitle: string,
+    status: string,
+    reason?: string,
+    nextInstructions?: string,
+  ): Promise<void> {
+    const isApproved = status === 'APPROVED';
+    const subject = isApproved
+      ? `Your scholarship application has been approved – ${scholarshipTitle}`
+      : `Update on your scholarship application – ${scholarshipTitle}`;
+    const defaultApproved = `
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Your application for <strong>${scholarshipTitle}</strong> has been approved. Congratulations!</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;"><strong>What happens next:</strong></p>
+        <ul style="margin: 0 0 16px; padding-left: 20px; color: #374151; line-height: 1.6;">
+          <li>Our team will contact you with next steps and any required documentation.</li>
+          <li>Check the NorthernBox app or your email for updates and deadlines.</li>
+          <li>If the scholarship includes mentorship or training, you will receive separate details.</li>
+        </ul>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">If you have any questions in the meantime, reply to this email or reach out through our website or app.</p>
+      `;
+    const defaultRejected = `
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Thank you for applying for <strong>${scholarshipTitle}</strong>. After careful review, we are unable to approve your application for this round.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">We receive many applications and have limited places. We encourage you to apply again when applications reopen or explore other NorthernBox scholarships and programs.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">We wish you the best in your studies and hope to see you in a future cohort.</p>
+      `;
+    const html = this.buildScholarshipEmailHtml({
+      recipientName: name,
+      scholarshipTitle,
+      isApproved,
+      approvedContent: defaultApproved,
+      rejectedContent: defaultRejected,
+      reason,
+      nextInstructions,
+    });
+    let text = isApproved
+      ? `NorthernBox – Scholarship Application Approved\n\nHello ${name},\n\nYour application for ${scholarshipTitle} has been approved.`
+      : `NorthernBox – Update on Your Scholarship Application\n\nHello ${name},\n\nThank you for applying for ${scholarshipTitle}. After careful review, we are unable to approve your application for this round.`;
+    if (reason?.trim()) text += `\n\nMessage from our team:\n${reason.trim()}`;
+    if (nextInstructions?.trim()) text += `\n\nNext steps:\n${nextInstructions.trim()}`;
+    text += `\n\nBest regards,\nThe NorthernBox Team\nhttps://northernbox.co.ke`;
+    await this.emailService.sendEmail(email, subject, html, text);
+  }
+
+  private buildScholarshipEmailHtml(options: {
+    recipientName: string;
+    scholarshipTitle: string;
+    isApproved: boolean;
+    approvedContent: string;
+    rejectedContent: string;
+    reason?: string;
+    nextInstructions?: string;
+  }): string {
+    const { recipientName, scholarshipTitle, isApproved, approvedContent, rejectedContent, reason, nextInstructions } = options;
+    const primaryColor = '#0284c7';
+    const primaryDark = '#0369a1';
+    const bgLight = '#f0f9ff';
+    const borderColor = '#e0f2fe';
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${isApproved ? 'Application Approved' : 'Update on Your Application'}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6; padding: 24px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          <tr>
+            <td style="background: linear-gradient(135deg, ${primaryColor} 0%, ${primaryDark} 100%); padding: 24px 32px; text-align: center;">
+              <span style="font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">NorthernBox</span>
+              <p style="margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.9);">Empowering Northern Kenya's youth</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 32px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="padding: 20px; background-color: ${bgLight}; border-left: 4px solid ${isApproved ? '#059669' : '#64748b'}; border-radius: 0 8px 8px 0;">
+                    <p style="margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Scholarship</p>
+                    <p style="margin: 4px 0 0; font-size: 18px; font-weight: 600; color: #111827;">${scholarshipTitle}</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 24px 0 0;">
+                    <h1 style="margin: 0 0 20px; font-size: 20px; font-weight: 600; color: #111827;">
+                      ${isApproved ? 'Your application has been approved' : 'Update on your application'}
+                    </h1>
+                    <p style="margin: 0 0 20px; font-size: 16px; color: #374151; line-height: 1.6;">Hello ${recipientName},</p>
+                    ${isApproved ? approvedContent : rejectedContent}
+                    ${reason?.trim() ? `
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top: 24px;">
+                      <tr>
+                        <td style="padding: 16px; background-color: #f8fafc; border-radius: 8px; border-left: 4px solid ${primaryColor};">
+                          <p style="margin: 0 0 6px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Message from our team</p>
+                          <p style="margin: 0; font-size: 15px; color: #374151; line-height: 1.6; white-space: pre-wrap;">${reason.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                        </td>
+                      </tr>
+                    </table>
+                    ` : ''}
+                    ${nextInstructions?.trim() ? `
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top: 20px;">
+                      <tr>
+                        <td style="padding: 16px; background-color: ${isApproved ? '#ecfdf5' : '#f8fafc'}; border-radius: 8px; border-left: 4px solid ${isApproved ? '#059669' : '#475569'};">
+                          <p style="margin: 0 0 6px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Next steps</p>
+                          <p style="margin: 0; font-size: 15px; color: #374151; line-height: 1.6; white-space: pre-wrap;">${nextInstructions.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                        </td>
+                      </tr>
+                    </table>
+                    ` : ''}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 24px 32px; background-color: #f9fafb; border-top: 1px solid ${borderColor};">
+              <p style="margin: 0 0 8px; font-size: 14px; color: #6b7280;">Need help?</p>
+              <p style="margin: 0; font-size: 14px;">
+                <a href="https://northernbox.co.ke/contact" style="color: ${primaryColor}; text-decoration: none;">Contact us</a>
+                &nbsp;·&nbsp;
+                <a href="https://northernbox.co.ke" style="color: ${primaryColor}; text-decoration: none;">northernbox.co.ke</a>
+              </p>
+              <p style="margin: 20px 0 0; font-size: 12px; color: #9ca3af;">© ${new Date().getFullYear()} NorthernBox. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
   }
 
   // Study Groups Management
