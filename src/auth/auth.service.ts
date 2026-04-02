@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../common/services/email.service';
+import { BadgesService } from '../badges/badges.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -26,6 +27,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private emailService: EmailService,
+    private badgesService: BadgesService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -120,6 +122,11 @@ export class AuthService {
       .catch((error) => {
         this.logger.error(`❌ Error sending welcome email to ${email}:`, error);
       });
+
+    // Award New Member badge (non-blocking)
+    this.badgesService.checkAndAwardBadges(user.id, { type: 'USER_REGISTERED' }).catch((err) => {
+      this.logger.warn('Failed to award new member badge:', err);
+    });
 
     return {
       user,

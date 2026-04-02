@@ -18,8 +18,10 @@ export class EmailService {
   }
 
   private initializeSendGrid() {
-    const apiKey = this.configService.get<string>('SENDGRID_API_KEY');
-    const sender = this.configService.get<string>('SENDGRID_FROM')?.trim();
+    const apiKey =
+      this.configService.get<string>('SENDGRID_API_KEY') || process.env.SENDGRID_API_KEY;
+    const sender =
+      (this.configService.get<string>('SENDGRID_FROM') || process.env.SENDGRID_FROM || '')?.trim();
 
     // Validate that sender is a non-empty string and looks like an email
     if (!apiKey || !sender || sender === 'null' || sender === 'undefined' || !sender.includes('@')) {
@@ -109,16 +111,20 @@ export class EmailService {
       return false;
     }
 
-    // Ensure we have a valid sender email (should never be null at this point, but double-check)
-    const from = this.senderEmail || 'noreply@northernbox.com';
+    // Ensure we have a valid sender email (prefer env fallback so logged-in user's config is used)
+    const from =
+      this.senderEmail ||
+      (process.env.SENDGRID_FROM || '').trim() ||
+      '';
 
-    if (!from || from === 'null' || !from.includes('@')) {
-      this.logger.error(`Invalid sender email: ${from}. Email not sent.`);
-      // Store as failed
+    if (!from || from === 'null' || from === 'undefined' || !from.includes('@')) {
+      this.logger.error(
+        `Invalid sender email (from="${from ?? 'null'}"). Set SENDGRID_FROM in .env to a verified SendGrid sender. Email not sent.`
+      );
       await this.storeEmail(to, subject, html, text || this.stripHtml(html), {
         status: ScheduledEmailStatus.FAILED,
         type: options?.type || ScheduledEmailType.CUSTOM,
-        errorMessage: `Invalid sender email: ${from}`,
+        errorMessage: `Invalid sender email: ${from ?? 'null'}. Set SENDGRID_FROM to a verified SendGrid sender.`,
         recipientId: options?.recipientId,
         createdBy: options?.createdBy,
         metadata: options?.metadata,
@@ -159,7 +165,18 @@ export class EmailService {
       return true;
     } catch (error: any) {
       this.logger.error(`Failed to send email to ${to}:`, error);
-      
+
+      const isSenderIdentityError =
+        error?.code === 403 ||
+        (error?.message && /sender identity|from address|verified/i.test(error.message));
+
+      if (isSenderIdentityError) {
+        this.logger.warn(
+          'SendGrid 403: The "from" address must be a verified Sender Identity in SendGrid. ' +
+            'Go to https://sendgrid.com/docs/for-developers/sending-email/sender-identity/ and verify SENDGRID_FROM (e.g. no-reply@yourdomain.com).'
+        );
+      }
+
       // Update stored email as failed
       await this.prisma.scheduledEmail.update({
         where: { id: storedEmail.id },
@@ -170,7 +187,7 @@ export class EmailService {
           retryCount: { increment: 1 },
         },
       });
-      
+
       return false;
     }
   }

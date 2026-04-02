@@ -24,6 +24,7 @@ import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permission, hasPermission, isAdminRole } from '../common/permissions/permissions.constant';
 import { UserRole } from '@prisma/client';
+import { CommunicateUsersDto } from './dto/communicate-users.dto';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -184,6 +185,16 @@ export class AdminController {
     @Body('message') message: string,
   ) {
     return this.adminService.sendMessageToUser(id, message, admin.id);
+  }
+
+  @Post('users/communicate')
+  @ApiOperation({ summary: 'Send communication (email and/or in-app) to selected users' })
+  @RequirePermissions(Permission.SEND_BROADCASTS)
+  async communicateWithUsers(
+    @CurrentUser() admin: any,
+    @Body() body: CommunicateUsersDto,
+  ) {
+    return this.adminService.communicateWithUsers(admin.id, body);
   }
 
   @Get('users/:id/export')
@@ -397,17 +408,26 @@ export class AdminController {
   }
 
   // Mentorship Management
+  @Get('mentorships/stats')
+  @ApiOperation({ summary: 'Get mentorship statistics (optional cycleId)' })
+  @ApiQuery({ name: 'cycleId', required: false })
+  async getMentorshipStats(@Query('cycleId') cycleId?: string) {
+    return this.adminService.getMentorshipStats(cycleId);
+  }
+
   @Get('mentorships')
   @ApiOperation({ summary: 'Get all mentorships (paginated)' })
   async getAllMentorships(
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('status') status?: string,
+    @Query('cycleId') cycleId?: string,
   ) {
     return this.adminService.getAllMentorships(
       page ? parseInt(page) : 1,
       limit ? parseInt(limit) : 20,
       status,
+      cycleId,
     );
   }
 
@@ -537,6 +557,133 @@ export class AdminController {
   @ApiOperation({ summary: 'Get comprehensive mentorship analytics' })
   async getMentorshipAnalytics(@Query('cycleId') cycleId?: string) {
     return this.adminService.getMentorshipAnalytics(cycleId);
+  }
+
+  // Task Monitoring
+  @Get('mentorship/tasks')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Get all tasks with filters' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'cycleId', required: false })
+  @ApiQuery({ name: 'mentorshipId', required: false })
+  @ApiQuery({ name: 'week', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'overdue', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  async getAllTasks(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('cycleId') cycleId?: string,
+    @Query('mentorshipId') mentorshipId?: string,
+    @Query('week') week?: string,
+    @Query('status') status?: string,
+    @Query('overdue') overdue?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.adminService.getAllTasks(
+      page ? parseInt(page) : 1,
+      limit ? parseInt(limit) : 50,
+      cycleId,
+      mentorshipId,
+      week ? parseInt(week) : undefined,
+      status,
+      overdue === 'true',
+      search,
+    );
+  }
+
+  @Get('mentorship/tasks/stats')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Get task statistics' })
+  @ApiQuery({ name: 'cycleId', required: false })
+  async getTaskStats(@Query('cycleId') cycleId?: string) {
+    return this.adminService.getTaskStats(cycleId);
+  }
+
+  @Get('mentorship/tasks/overdue')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Get overdue tasks' })
+  @ApiQuery({ name: 'cycleId', required: false })
+  async getOverdueTasks(@Query('cycleId') cycleId?: string) {
+    return this.adminService.getOverdueTasks(cycleId);
+  }
+
+  @Get('mentorship/tasks/:id')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Get task details' })
+  async getTaskById(@Param('id') id: string) {
+    return this.adminService.getTaskById(id);
+  }
+
+  @Put('mentorship/tasks/:id')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Update task' })
+  async updateTask(@Param('id') id: string, @Body() data: any) {
+    return this.adminService.updateTask(id, data);
+  }
+
+  @Post('mentorship/tasks/bulk')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Bulk update tasks' })
+  async bulkUpdateTasks(@Body() data: { taskIds: string[]; updates: any }) {
+    return this.adminService.bulkUpdateTasks(data.taskIds, data.updates);
+  }
+
+  @Put('mentorship/outcomes/:id/verify')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Verify an outcome (admin)' })
+  async verifyOutcome(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.adminService.verifyOutcome(id, user.id);
+  }
+
+  // Cohort applications (NorthernBox structured model)
+  @Get('mentorship/cycles/:id/applications')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Get cohort applications for screening' })
+  @ApiQuery({ name: 'status', required: false })
+  async getCohortApplications(
+    @Param('id') cycleId: string,
+    @Query('status') status?: string,
+  ) {
+    return this.adminService.getCohortApplicationsByCycle(cycleId, status);
+  }
+
+  @Put('mentorship/applications/:id')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Update application (screening status, score, notes)' })
+  async updateCohortApplication(@Param('id') id: string, @Body() data: any) {
+    return this.adminService.updateCohortApplication(id, data);
+  }
+
+  @Get('mentorship/cycles/:id/alumni')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Get alumni for a cycle' })
+  async getCycleAlumni(@Param('id') id: string) {
+    return this.adminService.getAlumniByCycle(id);
+  }
+
+  @Put('mentorship/alumni/:id')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Update alumni (showcase, can mentor future cohorts)' })
+  async updateAlumni(@Param('id') id: string, @Body() data: { showcased?: boolean; canMentorFutureCohorts?: boolean }) {
+    return this.adminService.updateAlumni(id, data);
+  }
+
+  @Put('mentorship/attendance')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Record weekly attendance (accountability)' })
+  async recordAttendance(
+    @Body() body: { mentorshipId: string; week: number; attended: boolean; excusedAbsence?: boolean },
+  ) {
+    return this.adminService.recordAttendance(body.mentorshipId, body.week, body.attended, body.excusedAbsence);
+  }
+
+  @Post('mentorship/cron/check-absent')
+  @RequirePermissions(Permission.MANAGE_MENTORSHIP)
+  @ApiOperation({ summary: 'Run dropout check: 2 consecutive unexcused absences → DROPPED (call from cron)' })
+  async checkConsecutiveAbsences() {
+    return this.adminService.checkConsecutiveAbsencesAllCycles();
   }
 
   // Notification Management
@@ -901,6 +1048,13 @@ export class AdminController {
       body.reason,
       body.nextInstructions,
     );
+  }
+
+  @Post('datacamp-donates/sync-users')
+  @ApiOperation({ summary: 'Backfill users from DataCamp Donates applicants' })
+  @RequirePermissions(Permission.MANAGE_USERS)
+  async syncDataCampApplicantsToUsers(@Query('dryRun') dryRun?: string) {
+    return this.adminService.syncDataCampApplicantsToUsers(dryRun === 'true');
   }
 
   // Study Groups Management

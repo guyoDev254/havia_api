@@ -38,5 +38,36 @@ export class CreateMenteeProfileDto {
   @IsBoolean()
   @IsOptional()
   commitmentAgreed?: boolean;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  goals?: string[]; // e.g. ["Get internship", "Build project"]
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  skills?: string[]; // for skill-match with mentor
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(5)
+  skillLevel?: number; // 0–5
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  @Max(168)
+  availabilityHoursPerWeek?: number;
+
+  @IsString()
+  @IsOptional()
+  timezone?: string; // e.g. "Africa/Nairobi"
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  portfolioLinks?: string[]; // URLs
 }
 

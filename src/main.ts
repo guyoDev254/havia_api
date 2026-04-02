@@ -45,14 +45,25 @@ async function bootstrap() {
     },
   });
 
-  // Enable CORS
+  // Enable CORS — CORS_ORIGIN may be comma-separated (e.g. "https://app.example,https://admin.example")
+  const corsFromEnv = (process.env.CORS_ORIGIN || 'http://localhost:19006')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   const allowedOrigins = [
-    process.env.CORS_ORIGIN || 'http://localhost:19006',
+    ...corsFromEnv,
     'http://localhost:3001', // Admin frontend
-    'http://localhost:3000', // Alternative admin port  
+    'http://localhost:3000', // Alternative admin port
     'http://127.0.0.1:19006', // Expo alternative
     'http://127.0.0.1:3001',
     'http://127.0.0.1:3000',
+    // Production (.org)
+    'https://northernbox.org',
+    'https://www.northernbox.org',
+    'https://api.northernbox.org',
+    'https://admin.northernbox.org',
+    // Production (.co.ke)
     'https://northernbox.co.ke',
     'https://www.northernbox.co.ke',
     'https://api.northernbox.co.ke',

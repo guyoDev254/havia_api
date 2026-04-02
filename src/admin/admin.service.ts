@@ -14,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { CommunicateUsersDto, CommunicationChannel } from './dto/communicate-users.dto';
 
 @Injectable()
 export class AdminService {
@@ -945,6 +946,85 @@ export class AdminService {
     };
   }
 
+  async communicateWithUsers(adminId: string, payload: CommunicateUsersDto) {
+    const userIds = Array.from(new Set(payload.userIds || []));
+    if (userIds.length === 0) {
+      throw new BadRequestException('Please select at least one user');
+    }
+
+    const channels =
+      payload.channels && payload.channels.length > 0
+        ? payload.channels
+        : [CommunicationChannel.EMAIL];
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { in: userIds },
+        isActive: true,
+      },
+      select: {
+        id: true,
+        email: true,
+      },
+    });
+
+    if (users.length === 0) {
+      throw new NotFoundException('No active users found for the selected IDs');
+    }
+
+    let emailSent = 0;
+    let inAppSent = 0;
+
+    if (channels.includes(CommunicationChannel.EMAIL)) {
+      const html = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+          <h2 style="margin-bottom: 12px;">${payload.subject}</h2>
+          <p style="white-space: pre-line;">${payload.message}</p>
+        </div>
+      `;
+
+      const emailResults = await Promise.all(
+        users.map((user) => this.emailService.sendEmail(user.email, payload.subject, html, payload.message)),
+      );
+      emailSent = emailResults.filter(Boolean).length;
+    }
+
+    if (channels.includes(CommunicationChannel.IN_APP)) {
+      await this.prisma.notification.createMany({
+        data: users.map((user) => ({
+          userId: user.id,
+          type: NotificationType.SYSTEM_ANNOUNCEMENT,
+          title: payload.subject,
+          message: payload.message,
+          isRead: false,
+        })),
+      });
+      inAppSent = users.length;
+    }
+
+    await this.auditService.logAction({
+      adminId,
+      action: 'BULK_COMMUNICATION',
+      entity: 'USER',
+      metadata: {
+        userCountRequested: userIds.length,
+        userCountResolved: users.length,
+        channels,
+        subject: payload.subject,
+        emailSent,
+        inAppSent,
+      },
+    });
+
+    return {
+      success: true,
+      totalRecipients: users.length,
+      emailSent,
+      inAppSent,
+      message: 'Communication sent successfully',
+    };
+  }
+
   async exportUserData(userId: string) {
     const user = await this.getUserById(userId);
     
@@ -1561,9 +1641,44 @@ export class AdminService {
   }
 
   // Mentorship Management
-  async getAllMentorships(page = 1, limit = 20, status?: string) {
+  async getMentorshipStats(cycleId?: string) {
+    const where = cycleId ? { cycleId } : {};
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const [total, active, pending, completed, cancelled, recent, agg] = await Promise.all([
+      this.prisma.mentorship.count({ where }),
+      this.prisma.mentorship.count({ where: { ...where, status: MentorshipStatus.ACTIVE } }),
+      this.prisma.mentorship.count({ where: { ...where, status: MentorshipStatus.PENDING } }),
+      this.prisma.mentorship.count({ where: { ...where, status: MentorshipStatus.COMPLETED } }),
+      this.prisma.mentorship.count({ where: { ...where, status: MentorshipStatus.CANCELLED } }),
+      this.prisma.mentorship.count({
+        where: { ...where, createdAt: { gte: sevenDaysAgo } },
+      }),
+      this.prisma.mentorship.aggregate({
+        where,
+        _sum: { sessionsCompleted: true },
+        _avg: { engagementScore: true },
+      }),
+    ]);
+
+    return {
+      total,
+      active,
+      pending,
+      completed,
+      cancelled,
+      totalSessions: agg._sum.sessionsCompleted ?? 0,
+      avgEngagement: agg._avg.engagementScore ?? 0,
+      recent,
+    };
+  }
+
+  async getAllMentorships(page = 1, limit = 20, status?: string, cycleId?: string) {
     const skip = (page - 1) * limit;
-    const where = status ? { status: status as MentorshipStatus } : {};
+    const where: any = {};
+    if (status) where.status = status as MentorshipStatus;
+    if (cycleId) where.cycleId = cycleId;
 
     const [mentorships, total] = await Promise.all([
       this.prisma.mentorship.findMany({
@@ -1587,6 +1702,15 @@ export class AdminService {
               lastName: true,
               email: true,
               profileImage: true,
+            },
+          },
+          cycle: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              startDate: true,
+              endDate: true,
             },
           },
         },
@@ -2914,6 +3038,86 @@ export class AdminService {
     return updated;
   }
 
+  async syncDataCampApplicantsToUsers(dryRun = false) {
+    const applications = await this.prisma.dataCampDonatesApplication.findMany({
+      select: {
+        email: true,
+        fullName: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const byEmail = new Map<string, { email: string; fullName: string }>();
+    for (const app of applications) {
+      const normalizedEmail = (app.email || '').trim().toLowerCase();
+      if (!normalizedEmail) continue;
+      if (!byEmail.has(normalizedEmail)) {
+        byEmail.set(normalizedEmail, { email: normalizedEmail, fullName: app.fullName || '' });
+      }
+    }
+
+    const uniqueApplicants = Array.from(byEmail.values());
+    if (uniqueApplicants.length === 0) {
+      return {
+        success: true,
+        dryRun,
+        scannedApplications: applications.length,
+        uniqueApplicantEmails: 0,
+        existingUsers: 0,
+        usersCreated: 0,
+      };
+    }
+
+    const existingUsers = await this.prisma.user.findMany({
+      where: {
+        email: { in: uniqueApplicants.map((a) => a.email) },
+      },
+      select: { email: true },
+    });
+    const existingEmailSet = new Set(existingUsers.map((u) => u.email.toLowerCase()));
+
+    const toCreate = uniqueApplicants
+      .filter((a) => !existingEmailSet.has(a.email))
+      .map((a) => {
+        const parts = a.fullName.trim().split(' ').filter(Boolean);
+        const firstName = parts[0] || 'DataCamp';
+        const lastName = parts.slice(1).join(' ') || 'Applicant';
+        return {
+          email: a.email,
+          firstName,
+          lastName,
+        };
+      });
+
+    if (!dryRun && toCreate.length > 0) {
+      const sharedTempPassword = crypto.randomBytes(16).toString('hex');
+      const hashedPassword = await bcrypt.hash(sharedTempPassword, 10);
+
+      await this.prisma.user.createMany({
+        data: toCreate.map((u) => ({
+          email: u.email,
+          password: hashedPassword,
+          firstName: u.firstName,
+          lastName: u.lastName,
+          role: UserRole.MEMBER,
+          isActive: true,
+          isEmailVerified: false,
+          isStudent: true,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return {
+      success: true,
+      dryRun,
+      scannedApplications: applications.length,
+      uniqueApplicantEmails: uniqueApplicants.length,
+      existingUsers: existingUsers.length,
+      usersCreated: toCreate.length,
+    };
+  }
+
   private async sendDataCampStatusEmail(
     email: string,
     name: string,
@@ -3921,12 +4125,16 @@ export class AdminService {
     expectedOutcomes?: string;
     requirements?: string;
     targetGroup?: string;
+    targetGroupEnum?: string;
     conditions?: string;
     startDate: string;
     endDate: string;
     maxMentorships?: number;
+    maxCohortSize?: number;
+    totalWeeks?: number;
+    phases?: { phaseOrder: number; name: string; startWeek: number; endWeek: number; description?: string }[];
   }) {
-    const created = await this.mentorshipService.createCycle(data);
+    const created = await this.mentorshipService.createCycle(data as any);
 
     // Notify mentors/mentees that a new cycle is available (UPCOMING).
     // Keep it one-time and informational; launch notifications are handled separately.
@@ -4021,6 +4229,8 @@ export class AdminService {
     const mentees = [...menteeProfiles];
     let interestedUserIds: Set<string> = new Set();
 
+    const acceptedApplicantUserIds = new Set<string>();
+
     // If cycleId provided, also get users who expressed interest (even without full profiles)
     if (cycleId) {
       const interests = await this.prisma.mentorshipCycleInterest.findMany({
@@ -4044,9 +4254,8 @@ export class AdminService {
       // Add interested users who don't have profiles yet
       interests.forEach((interest) => {
         interestedUserIds.add(interest.userId);
-        
+
         if (interest.role === 'MENTOR') {
-          // Add to mentors if not already there
           if (!mentorUserIds.has(interest.userId)) {
             mentors.push({
               id: interest.userId,
@@ -4058,8 +4267,6 @@ export class AdminService {
             } as any);
           }
         } else {
-          // Default to MENTEE if role is MENTEE or undefined/null
-          // Add to mentees if not already there
           if (!menteeUserIds.has(interest.userId)) {
             mentees.push({
               id: interest.userId,
@@ -4071,6 +4278,37 @@ export class AdminService {
           }
         }
       });
+
+      // P0: Include ACCEPTED cohort applicants as available mentees (so admin can assign them)
+      const acceptedApps = await this.prisma.cohortApplication.findMany({
+        where: { cycleId, status: 'ACCEPTED' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              profileImage: true,
+            },
+          },
+        },
+      });
+      for (const app of acceptedApps) {
+        acceptedApplicantUserIds.add(app.userId);
+        if (!menteeUserIds.has(app.userId)) {
+          const alreadyInMentees = mentees.some((m) => m.userId === app.userId);
+          if (!alreadyInMentees) {
+            mentees.push({
+              id: app.userId,
+              userId: app.userId,
+              isActive: true,
+              user: app.user,
+              _fromCohortApplication: true,
+            } as any);
+          }
+        }
+      }
     }
 
     return {
@@ -4081,7 +4319,7 @@ export class AdminService {
         lastName: m.user.lastName,
         email: m.user.email,
         profileImage: m.user.profileImage,
-        hasProfile: !(m as any)._isInterestedOnly, // Real profile if not interest-only
+        hasProfile: !(m as any)._isInterestedOnly,
         isVerified: m.isVerified ?? false,
         hasExpressedInterest: cycleId ? interestedUserIds.has(m.userId) : false,
       })),
@@ -4092,14 +4330,102 @@ export class AdminService {
         lastName: m.user.lastName,
         email: m.user.email,
         profileImage: m.user.profileImage,
-        hasProfile: !(m as any)._isInterestedOnly, // Real profile if not interest-only
+        hasProfile: !(m as any)._isInterestedOnly && !(m as any)._fromCohortApplication,
         hasExpressedInterest: cycleId ? interestedUserIds.has(m.userId) : false,
+        fromCohortApplication: cycleId ? (m as any)._fromCohortApplication === true : false,
       })),
     };
   }
 
   async manualAssignMentorshipToCycle(cycleId: string, mentorId: string, menteeId: string) {
     return this.mentorshipService.manualAssignMentorship(cycleId, mentorId, menteeId);
+  }
+
+  async getCohortApplicationsByCycle(cycleId: string, status?: string) {
+    return this.mentorshipService.getCohortApplicationsByCycle(
+      cycleId,
+      status as import('@prisma/client').CohortApplicationStatus | undefined,
+    );
+  }
+
+  async updateCohortApplication(applicationId: string, data: { status?: string; screeningScore?: number; screeningNotes?: string }) {
+    const updated = await this.mentorshipService.updateCohortApplication(applicationId, data as any);
+    if ((data.status === 'ACCEPTED' || data.status === 'REJECTED') && updated?.user) {
+      const cycleName = (updated as any).cycle?.name ?? 'Mentorship cohort';
+      const name = [updated.user.firstName, updated.user.lastName].filter(Boolean).join(' ') || 'Applicant';
+      if (updated.user.email) {
+        this.sendCohortApplicationStatusEmail(updated.user.email, name, cycleName, data.status).catch((err) =>
+          this.logger.error(`Failed to send cohort application status email to ${updated.user?.email}:`, err),
+        );
+      }
+      this.notificationsService
+        .createAndSend(updated.userId, {
+          title: data.status === 'ACCEPTED' ? 'Application accepted' : 'Update on your application',
+          message:
+            data.status === 'ACCEPTED'
+              ? `Your application for "${cycleName}" has been accepted. Check the app for next steps.`
+              : `Your application for "${cycleName}" was not accepted this time. You can apply again when the next cohort opens.`,
+          type: 'SYSTEM_ANNOUNCEMENT' as any,
+          link: (updated as any).cycle?.id ? `/mentorship/cycles/${(updated as any).cycle.id}` : undefined,
+        })
+        .catch((err) => this.logger.error('Failed to send cohort application notification:', err));
+    }
+    return updated;
+  }
+
+  private async sendCohortApplicationStatusEmail(
+    email: string,
+    name: string,
+    cycleName: string,
+    status: string,
+  ): Promise<void> {
+    const isAccepted = status === 'ACCEPTED';
+    const subject = isAccepted
+      ? `Your application has been accepted – ${cycleName}`
+      : `Update on your cohort application – ${cycleName}`;
+    const approvedContent = `
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Your application for the mentorship cohort <strong>${cycleName}</strong> has been accepted. Congratulations!</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Check the NorthernBox app for next steps. You may be matched with a mentor or invited to onboarding sessions.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">If you have any questions, reply to this email or reach out through the app.</p>
+      `;
+    const rejectedContent = `
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">Thank you for applying for the cohort <strong>${cycleName}</strong>. After careful review, we are unable to offer you a place in this round.</p>
+        <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">We encourage you to apply again when the next cohort opens or explore other NorthernBox opportunities in the app.</p>
+      `;
+    const html = this.buildScholarshipEmailHtml({
+      recipientName: name,
+      scholarshipTitle: cycleName,
+      isApproved: isAccepted,
+      approvedContent,
+      rejectedContent,
+    });
+    const text = isAccepted
+      ? `NorthernBox – Application Accepted\n\nHello ${name},\n\nYour application for ${cycleName} has been accepted. Check the app for next steps.`
+      : `NorthernBox – Update on Your Application\n\nHello ${name},\n\nThank you for applying for ${cycleName}. We are unable to offer you a place in this round. We encourage you to apply again when the next cohort opens.`;
+    await this.emailService.sendEmail(email, subject, html, text);
+  }
+
+  async updateAlumni(alumniId: string, data: { showcased?: boolean; canMentorFutureCohorts?: boolean }) {
+    return this.mentorshipService.updateAlumni(alumniId, data);
+  }
+
+  async getAlumniByCycle(cycleId: string) {
+    return this.mentorshipService.getAlumniByCycle(cycleId);
+  }
+
+  async recordAttendance(mentorshipId: string, week: number, attended: boolean, excusedAbsence?: boolean) {
+    return this.mentorshipService.recordWeekAttendance(mentorshipId, week, attended, excusedAbsence);
+  }
+
+  async checkConsecutiveAbsencesAllCycles() {
+    const cycles = await this.prisma.mentorshipCycle.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true },
+    });
+    for (const c of cycles) {
+      await this.mentorshipService.checkConsecutiveAbsencesAndDrop(c.id);
+    }
+    return { checked: cycles.length };
   }
 
   async launchMentorshipCycle(cycleId: string, adminId: string) {
@@ -4117,48 +4443,28 @@ export class AdminService {
       data: { status: 'ACTIVE' },
     });
 
-    // Get all active mentors and mentees
-    const [mentors, mentees] = await Promise.all([
-      this.prisma.mentorProfile.findMany({
-        where: { isActive: true, isVerified: true },
-        include: { user: true },
-      }),
-      this.prisma.menteeProfile.findMany({
-        where: { isActive: true },
-        include: { user: true },
-      }),
-    ]);
+    // Notify all active users so they can apply as mentors, mentees, or volunteers
+    const allActiveUsers = await this.prisma.user.findMany({
+      where: { isActive: true },
+      select: { id: true },
+    });
 
-    // Send announcement notifications
-    const notifications = [];
-    for (const mentor of mentors) {
-      notifications.push(
-        this.notificationsService.createAndSend(mentor.userId, {
-          title: `New Mentorship Cycle: ${cycle.name}`,
-          message: `The ${cycle.name} mentorship cycle has been launched! Check your matches.`,
-          type: NotificationType.SYSTEM_ANNOUNCEMENT,
-          link: `/mentorship/cycles/${cycleId}`,
-        }),
-      );
-    }
-
-    for (const mentee of mentees) {
-      notifications.push(
-        this.notificationsService.createAndSend(mentee.userId, {
-          title: `New Mentorship Cycle: ${cycle.name}`,
-          message: `The ${cycle.name} mentorship cycle has been launched! Apply now to find your mentor.`,
-          type: NotificationType.SYSTEM_ANNOUNCEMENT,
-          link: `/mentorship/cycles/${cycleId}`,
-        }),
-      );
-    }
+    const launchMessage =
+      `${cycle.name} is now open! Apply as a mentor, mentee, or volunteer in the Mentorship tab.`;
+    const notifications = allActiveUsers.map((u) =>
+      this.notificationsService.createAndSend(u.id, {
+        title: `Mentorship cycle launched: ${cycle.name}`,
+        message: launchMessage,
+        type: NotificationType.SYSTEM_ANNOUNCEMENT,
+        link: `/mentorship/cycles/${cycleId}`,
+      }),
+    );
 
     await Promise.all(notifications);
 
     return {
       cycle: updatedCycle,
-      mentorsNotified: mentors.length,
-      menteesNotified: mentees.length,
+      usersNotified: allActiveUsers.length,
     };
   }
 
@@ -4256,6 +4562,16 @@ export class AdminService {
       include: { user: true },
     });
 
+    // Outcome pipeline: only include mentees with commitment score >= 50
+    const menteesWithCommitment: typeof mentees = [];
+    for (const mentee of mentees) {
+      const app = await this.prisma.cohortApplication.findUnique({
+        where: { cycleId_userId: { cycleId, userId: mentee.userId } },
+      });
+      const { score } = await this.mentorshipService.getMenteeCommitmentScore(mentee.userId, app?.id);
+      if (score >= 50) menteesWithCommitment.push(mentee);
+    }
+
     // Get all available mentors (not at max capacity)
     const mentors = await this.prisma.mentorProfile.findMany({
       where: {
@@ -4268,7 +4584,7 @@ export class AdminService {
     const matches = [];
     const matchRecords = [];
 
-    for (const mentee of mentees) {
+    for (const mentee of menteesWithCommitment) {
       const menteeMatches = [];
       for (const mentor of mentors) {
         // Check if mentor has capacity
@@ -4499,20 +4815,12 @@ export class AdminService {
           where: { ...where, status: 'COMPLETED' },
         }),
         this.prisma.mentorshipTask.count({
-          where: cycleId
-            ? {
-                mentorship: { cycleId },
-              }
-            : {},
+          where: cycleId ? { cycleId } : {},
         }),
         this.prisma.mentorshipTask.count({
           where: {
             status: 'COMPLETED',
-            ...(cycleId
-              ? {
-                  mentorship: { cycleId },
-                }
-              : {}),
+            ...(cycleId ? { cycleId } : {}),
           },
         }),
       ]);
@@ -4612,6 +4920,266 @@ export class AdminService {
       },
       monthlyStats,
     };
+  }
+
+  // Task Monitoring
+  async getAllTasks(
+    page: number = 1,
+    limit: number = 50,
+    cycleId?: string,
+    mentorshipId?: string,
+    week?: number,
+    status?: string,
+    overdue?: boolean,
+    search?: string,
+  ) {
+    const skip = (page - 1) * limit;
+    const where: any = {};
+
+    // Filter by cycleId directly (tasks now have cycleId field)
+    if (cycleId) {
+      where.cycleId = cycleId;
+    }
+
+    if (mentorshipId) {
+      where.mentorshipId = mentorshipId;
+    }
+
+    if (week) {
+      where.week = week;
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (overdue) {
+      where.dueDate = { lt: new Date() };
+      where.status = { not: 'COMPLETED' };
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [tasks, total] = await Promise.all([
+      this.prisma.mentorshipTask.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          mentorship: {
+            include: {
+              mentor: { select: { id: true, firstName: true, lastName: true, email: true } },
+              mentee: { select: { id: true, firstName: true, lastName: true, email: true } },
+              cycle: { select: { id: true, name: true } },
+            },
+          },
+          cycle: { select: { id: true, name: true } }, // Direct cycle relation
+          program: { select: { id: true, week: true } },
+        },
+        orderBy: [
+          { dueDate: 'asc' },
+          { createdAt: 'desc' },
+        ],
+      }),
+      this.prisma.mentorshipTask.count({ where }),
+    ]);
+
+    return {
+      tasks,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getTaskStats(cycleId?: string) {
+    const where = cycleId ? { cycleId } : {}; // Filter by cycleId directly on tasks
+
+    const [
+      total,
+      completed,
+      inProgress,
+      pending,
+      overdue,
+      tasksDueThisWeek,
+    ] = await Promise.all([
+      this.prisma.mentorshipTask.count({ where }),
+      this.prisma.mentorshipTask.count({ where: { ...where, status: 'COMPLETED' } }),
+      this.prisma.mentorshipTask.count({ where: { ...where, status: 'IN_PROGRESS' } }),
+      this.prisma.mentorshipTask.count({ where: { ...where, status: 'PENDING' } }),
+      this.prisma.mentorshipTask.count({
+        where: {
+          ...where,
+          dueDate: { lt: new Date() },
+          status: { not: 'COMPLETED' },
+        },
+      }),
+      this.prisma.mentorshipTask.count({
+        where: {
+          ...where,
+          dueDate: {
+            gte: new Date(),
+            lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+          status: { not: 'COMPLETED' },
+        },
+      }),
+    ]);
+
+    const completionRate = total > 0 ? (completed / total) * 100 : 0;
+
+    // Week-by-week stats
+    const weekStats = await this.prisma.mentorshipTask.groupBy({
+      by: ['week'],
+      where,
+      _count: true,
+      _avg: {
+        // We'll calculate completion rate per week
+      },
+    });
+
+    const weekStatsWithCompletion = await Promise.all(
+      weekStats.map(async (stat) => {
+        const weekCompleted = await this.prisma.mentorshipTask.count({
+          where: {
+            ...where,
+            week: stat.week,
+            status: 'COMPLETED',
+          },
+        });
+        return {
+          week: stat.week,
+          total: stat._count,
+          completed: weekCompleted,
+          completionRate: stat._count > 0 ? (weekCompleted / stat._count) * 100 : 0,
+        };
+      }),
+    );
+
+    return {
+      overview: {
+        total,
+        completed,
+        inProgress,
+        pending,
+        overdue,
+        tasksDueThisWeek,
+        completionRate,
+      },
+      weekStats: weekStatsWithCompletion.sort((a, b) => a.week - b.week),
+    };
+  }
+
+  async getOverdueTasks(cycleId?: string) {
+    const where: any = {
+      dueDate: { lt: new Date() },
+      status: { not: 'COMPLETED' },
+    };
+
+    if (cycleId) {
+      where.cycleId = cycleId; // Filter by cycleId directly on tasks
+    }
+
+    const tasks = await this.prisma.mentorshipTask.findMany({
+      where,
+      include: {
+        mentorship: {
+          include: {
+            mentor: { select: { id: true, firstName: true, lastName: true, email: true } },
+            mentee: { select: { id: true, firstName: true, lastName: true, email: true } },
+            cycle: { select: { id: true, name: true } },
+          },
+        },
+        program: { select: { id: true, week: true } },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+
+    return tasks;
+  }
+
+  async getTaskById(id: string) {
+    return this.prisma.mentorshipTask.findUnique({
+      where: { id },
+        include: {
+          mentorship: {
+            include: {
+              mentor: { select: { id: true, firstName: true, lastName: true, email: true, profileImage: true } },
+              mentee: { select: { id: true, firstName: true, lastName: true, email: true, profileImage: true } },
+              cycle: { select: { id: true, name: true, startDate: true, endDate: true } },
+            },
+          },
+          cycle: { select: { id: true, name: true, startDate: true, endDate: true } }, // Direct cycle relation
+          program: { select: { id: true, week: true } },
+        },
+    });
+  }
+
+  async updateTask(id: string, data: any) {
+    const updateData: any = {};
+
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.status !== undefined) {
+      updateData.status = data.status;
+      if (data.status === 'COMPLETED') {
+        updateData.completedAt = new Date();
+      }
+    }
+    if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
+    if (data.mentorFeedback !== undefined) updateData.mentorFeedback = data.mentorFeedback;
+    if (data.week !== undefined) updateData.week = data.week;
+    if (data.type !== undefined) updateData.type = data.type;
+
+    return this.prisma.mentorshipTask.update({
+      where: { id },
+      data: updateData,
+      include: {
+        mentorship: {
+          include: {
+            mentor: { select: { id: true, firstName: true, lastName: true, email: true } },
+            mentee: { select: { id: true, firstName: true, lastName: true, email: true } },
+            cycle: { select: { id: true, name: true } },
+          },
+        },
+        program: { select: { id: true, week: true } },
+      },
+    });
+  }
+
+  async bulkUpdateTasks(taskIds: string[], updates: any) {
+    const updateData: any = {};
+
+    if (updates.status !== undefined) {
+      updateData.status = updates.status;
+      if (updates.status === 'COMPLETED') {
+        updateData.completedAt = new Date();
+      }
+    }
+    if (updates.dueDate !== undefined) updateData.dueDate = updates.dueDate ? new Date(updates.dueDate) : null;
+    if (updates.week !== undefined) updateData.week = updates.week;
+
+    const result = await this.prisma.mentorshipTask.updateMany({
+      where: { id: { in: taskIds } },
+      data: updateData,
+    });
+
+    return {
+      updated: result.count,
+      taskIds,
+    };
+  }
+
+  async verifyOutcome(outcomeId: string, adminUserId: string) {
+    return this.mentorshipService.verifyOutcome(outcomeId, adminUserId);
   }
 }
 

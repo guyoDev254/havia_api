@@ -134,13 +134,24 @@ export class NotificationsService {
       },
     });
 
-    if (!user || !user.expoPushToken || !user.pushNotificationsEnabled) {
-      return { success: false, reason: 'No push token or notifications disabled' };
+    if (!user) {
+      return { success: false, reason: 'User not found' };
+    }
+    if (!user.expoPushToken) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.warn(`[Push] Skipped user ${userId}: no push token (app must call POST /notifications/register-token after login)`);
+      }
+      return { success: false, reason: 'No push token registered (app must register token after login)' };
+    }
+    if (!user.pushNotificationsEnabled) {
+      return { success: false, reason: 'User has disabled push notifications' };
     }
 
     // Validate Expo push token
     if (!Expo.isExpoPushToken(user.expoPushToken)) {
-      console.error('Invalid Expo push token:', user.expoPushToken);
+      // eslint-disable-next-line no-console
+      console.warn(`[Push] Invalid Expo push token for user ${userId}, token prefix: ${String(user.expoPushToken).slice(0, 20)}...`);
       return { success: false, reason: 'Invalid push token' };
     }
 

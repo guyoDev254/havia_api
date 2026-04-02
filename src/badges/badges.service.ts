@@ -150,7 +150,7 @@ export class BadgesService {
    * This method checks various criteria and awards badges accordingly
    */
   async checkAndAwardBadges(userId: string, action: {
-    type: 'CLUB_JOINED' | 'EVENT_REGISTERED' | 'EVENT_ATTENDED' | 'MENTORSHIP_COMPLETED' | 'FIRST_POST' | 'CLUB_CREATED';
+    type: 'CLUB_JOINED' | 'EVENT_REGISTERED' | 'EVENT_ATTENDED' | 'MENTORSHIP_COMPLETED' | 'FIRST_POST' | 'CLUB_CREATED' | 'USER_REGISTERED';
     data?: any;
   }) {
     try {
@@ -264,6 +264,8 @@ export class BadgesService {
           if (user.posts.length >= 1) {
             shouldAward = true;
           }
+        } else if (action.type === 'USER_REGISTERED' && (badgeName.includes('new member') || badgeName.includes('membership') || badgeDesc.includes('new member') || badgeDesc.includes('joined') || badgeDesc.includes('welcome'))) {
+          shouldAward = true;
         }
 
         // Award the badge if criteria met

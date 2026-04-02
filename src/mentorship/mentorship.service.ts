@@ -14,6 +14,7 @@ import {
   EvaluationType,
   MatchStatus,
   SessionStatus,
+  CohortApplicationStatus,
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BadgesService } from '../badges/badges.service';
@@ -22,6 +23,9 @@ import { CreateMenteeProfileDto } from './dto/create-mentee-profile.dto';
 import { CreateCycleDto } from './dto/create-cycle.dto';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
+import { CreateCohortApplicationDto } from './dto/create-cohort-application.dto';
+import { UpdateCohortApplicationDto } from './dto/update-cohort-application.dto';
+import { MentorshipPipelineService, MENTEE_COMMITMENT_MIN } from './mentorship-pipeline.service';
 
 @Injectable()
 export class MentorshipService {
@@ -29,6 +33,7 @@ export class MentorshipService {
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private badgesService: BadgesService,
+    private pipeline: MentorshipPipelineService,
   ) {}
 
   private async getDefaultCycleId(): Promise<string | null> {
@@ -274,7 +279,10 @@ export class MentorshipService {
   // ==================== CYCLE MANAGEMENT ====================
 
   async createCycle(dto: CreateCycleDto) {
-    return this.prisma.mentorshipCycle.create({
+    const maxCohortSize = dto.maxCohortSize ?? 20;
+    const totalWeeks = dto.totalWeeks ?? 12;
+
+    const cycle = await this.prisma.mentorshipCycle.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -282,11 +290,39 @@ export class MentorshipService {
         expectedOutcomes: dto.expectedOutcomes,
         requirements: dto.requirements,
         targetGroup: dto.targetGroup,
+        targetGroupEnum: dto.targetGroupEnum ?? undefined,
         conditions: dto.conditions,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         maxMentorships: dto.maxMentorships,
+        maxCohortSize,
+        totalWeeks,
       },
+    });
+
+    const phasesToCreate =
+      dto.phases && dto.phases.length > 0
+        ? dto.phases
+        : [
+            { phaseOrder: 1, name: 'Foundation', startWeek: 1, endWeek: 4, description: 'Core skills training, weekly check-ins, small assignments' },
+            { phaseOrder: 2, name: 'Application', startWeek: 5, endWeek: 8, description: 'Real project, team collaboration, mentorship sessions' },
+            { phaseOrder: 3, name: 'Professionalization', startWeek: 9, endWeek: 12, description: 'Portfolio building, public demo day, certification, LinkedIn' },
+          ];
+
+    await this.prisma.cohortPhase.createMany({
+      data: phasesToCreate.map((p) => ({
+        cycleId: cycle.id,
+        phaseOrder: p.phaseOrder,
+        name: p.name,
+        startWeek: p.startWeek,
+        endWeek: p.endWeek,
+        description: p.description,
+      })),
+    });
+
+    return this.prisma.mentorshipCycle.findUnique({
+      where: { id: cycle.id },
+      include: { phases: true },
     });
   }
 
@@ -298,8 +334,11 @@ export class MentorshipService {
           select: {
             programs: true,
             mentorships: true,
+            applications: true,
+            alumni: true,
           },
         },
+        phases: { orderBy: { phaseOrder: 'asc' }, select: { id: true, phaseOrder: true, name: true, startWeek: true, endWeek: true } },
       },
     });
   }
@@ -350,6 +389,7 @@ export class MentorshipService {
                 email: true,
               },
             },
+            progress: { orderBy: { week: 'asc' } },
           },
           orderBy: { createdAt: 'desc' },
         },
@@ -389,10 +429,13 @@ export class MentorshipService {
           },
           orderBy: { createdAt: 'desc' },
         },
+        phases: { orderBy: { phaseOrder: 'asc' } },
         _count: {
           select: {
             programs: true,
             mentorships: true,
+            applications: true,
+            alumni: true,
           },
         },
       },
@@ -405,6 +448,18 @@ export class MentorshipService {
     return cycle;
   }
 
+  async getCyclePhases(cycleId: string) {
+    const cycle = await this.prisma.mentorshipCycle.findUnique({
+      where: { id: cycleId },
+      select: { id: true },
+    });
+    if (!cycle) throw new NotFoundException('Cycle not found');
+    return this.prisma.cohortPhase.findMany({
+      where: { cycleId },
+      orderBy: { phaseOrder: 'asc' },
+    });
+  }
+
   // ==================== MANUAL ADMIN ASSIGNMENT ====================
 
   async manualAssignMentorship(cycleId: string, mentorId: string, menteeId: string) {
@@ -415,7 +470,20 @@ export class MentorshipService {
     const cycle = await this.prisma.mentorshipCycle.findUnique({ where: { id: cycleId } });
     if (!cycle) throw new NotFoundException('Cycle not found');
 
-    const [mentorProfile, menteeProfile] = await Promise.all([
+    const cohortCap = (cycle as any).maxCohortSize ?? cycle.maxMentorships ?? 20;
+    const currentCount = await this.prisma.mentorship.count({
+      where: {
+        cycleId,
+        status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
+      },
+    });
+    if (currentCount >= cohortCap) {
+      throw new BadRequestException(
+        `Cohort is full (max ${cohortCap}). Select a manageable cohort size (10–20 recommended).`,
+      );
+    }
+
+    const [mentorProfile, menteeProfile, acceptedApplication] = await Promise.all([
       this.prisma.mentorProfile.findUnique({
         where: { userId: mentorId },
         select: { isActive: true, isVerified: true, currentMentees: true, maxMentees: true },
@@ -424,28 +492,57 @@ export class MentorshipService {
         where: { userId: menteeId },
         select: { isActive: true },
       }),
+      this.prisma.cohortApplication.findUnique({
+        where: { cycleId_userId: { cycleId, userId: menteeId } },
+        select: { status: true },
+      }),
     ]);
 
     if (!mentorProfile || !mentorProfile.isActive || !mentorProfile.isVerified) {
       throw new BadRequestException('Selected mentor must have an active, verified mentor profile');
     }
+    const menteeIsAcceptedApplicant = acceptedApplication?.status === CohortApplicationStatus.ACCEPTED;
     if (!menteeProfile || !menteeProfile.isActive) {
-      throw new BadRequestException('Selected mentee must have an active mentee profile');
+      if (!menteeIsAcceptedApplicant) {
+        throw new BadRequestException('Selected mentee must have an active mentee profile or be an accepted applicant for this cycle');
+      }
+      // Ensure a mentee profile exists for accepted cohort applicants so the rest of the system works
+      await this.prisma.menteeProfile.upsert({
+        where: { userId: menteeId },
+        create: {
+          userId: menteeId,
+          isActive: true,
+          learningPreference: [],
+        },
+        update: { isActive: true },
+      });
     }
     if (mentorProfile.currentMentees >= mentorProfile.maxMentees) {
       throw new BadRequestException('Mentor has reached maximum mentees');
     }
 
-    const existing = await this.prisma.mentorship.findFirst({
-      where: {
-        cycleId,
-        mentorId,
-        menteeId,
-        status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
-      },
-    });
-    if (existing) {
+    const [existingPair, existingMenteeInCycle] = await Promise.all([
+      this.prisma.mentorship.findFirst({
+        where: {
+          cycleId,
+          mentorId,
+          menteeId,
+          status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
+        },
+      }),
+      this.prisma.mentorship.findFirst({
+        where: {
+          cycleId,
+          menteeId,
+          status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
+        },
+      }),
+    ]);
+    if (existingPair) {
       throw new BadRequestException('An active/pending mentorship already exists for this pair in this cycle');
+    }
+    if (existingMenteeInCycle) {
+      throw new BadRequestException('This mentee is already assigned to a mentor in this cycle');
     }
 
     // Create (or reuse) a match record as an audit trail for manual assignment.
@@ -522,7 +619,7 @@ export class MentorshipService {
     return mentorship;
   }
 
-  // ==================== MATCHING ALGORITHM ====================
+  // ==================== MATCHING ALGORITHM (Outcome pipeline: weighted compatibility) ====================
 
   async calculateMatchScore(
     mentorId: string,
@@ -536,89 +633,48 @@ export class MentorshipService {
     communicationMatch: number;
     personalityFit: number;
   }> {
-    const mentor = await this.prisma.mentorProfile.findUnique({
-      where: { userId: mentorId },
-      include: {
-        user: {
-          select: {
-            skills: true,
-            occupation: true,
-            interests: true,
-          },
-        },
-      },
-    });
-
-    const mentee = await this.prisma.menteeProfile.findUnique({
-      where: { userId: menteeId },
-      include: {
-        user: {
-          select: {
-            skills: true,
-            interests: true,
-          },
-        },
-      },
-    });
-
-    if (!mentor || !mentee) {
-      throw new NotFoundException('Mentor or mentee profile not found');
-    }
-
-    // Skill Match (40%)
-    const mentorSkills = mentor.user.skills || [];
-    const menteeSkills = mentee.user.skills || [];
-    const commonSkills = mentorSkills.filter((s) => menteeSkills.includes(s));
-    const skillMatch =
-      mentorSkills.length > 0
-        ? (commonSkills.length / Math.max(mentorSkills.length, menteeSkills.length)) * 40
-        : 20; // Default 50% if no skills
-
-    // Industry Relevance (20%)
-    const industryRelevance = mentor.mentorshipThemes.some((theme) =>
-      mentee.fieldOfInterest?.toLowerCase().includes(theme.toLowerCase()),
-    )
-      ? 20
-      : 10;
-
-    // Availability Match (20%)
-    // Simplified: if both have availability set, give full score
-    const availabilityMatch =
-      mentor.weeklyAvailability && mentee.availability ? 20 : 10;
-
-    // Communication Style Match (10%)
-    // Simplified: if mentee prefers matches mentor style
-    const communicationMatch = 8; // Default score
-
-    // Personality Fit (10%)
-    const commonInterests = (mentor.user.interests || []).filter((i) =>
-      (mentee.user.interests || []).includes(i),
-    );
-    const personalityFit =
-      commonInterests.length > 0
-        ? (commonInterests.length / Math.max(mentor.user.interests?.length || 1, mentee.user.interests?.length || 1)) * 10
-        : 5;
-
-    const matchScore =
-      skillMatch + industryRelevance + availabilityMatch + communicationMatch + personalityFit;
-
+    const c = await this.pipeline.calculateCompatibilityScore(mentorId, menteeId);
+    // Map to legacy component scale: skill 0–40, industry 0–20, availability 0–20, communication 0–10, personality 0–10
     return {
-      matchScore: Math.round(matchScore * 100) / 100,
-      skillMatch: Math.round(skillMatch * 100) / 100,
-      industryRelevance: Math.round(industryRelevance * 100) / 100,
-      availabilityMatch: Math.round(availabilityMatch * 100) / 100,
-      communicationMatch: Math.round(communicationMatch * 100) / 100,
-      personalityFit: Math.round(personalityFit * 100) / 100,
+      matchScore: Math.round(c.compatibilityScore * 100) / 100,
+      skillMatch: Math.round(c.skillMatchScore * 40 * 100) / 100,
+      industryRelevance: Math.round(c.goalAlignmentScore * 20 * 100) / 100,
+      availabilityMatch: Math.round(c.availabilityOverlapScore * 20 * 100) / 100,
+      communicationMatch: Math.round(c.timezoneScore * 10 * 100) / 100,
+      personalityFit: Math.round(c.mentorScoreNormalized * 10 * 100) / 100,
     };
   }
 
-  async findMatches(menteeId: string, cycleId?: string, minScore = 70) {
+  async findMatches(menteeId: string, cycleId: string, minScore = 70) {
+    if (!cycleId) {
+      throw new BadRequestException('cycleId is required. All matches must belong to a cycle.');
+    }
+
+    const cycle = await this.prisma.mentorshipCycle.findUnique({
+      where: { id: cycleId },
+    });
+
+    if (!cycle) {
+      throw new NotFoundException('Cycle not found');
+    }
+
     const mentee = await this.prisma.menteeProfile.findUnique({
       where: { userId: menteeId },
     });
 
     if (!mentee) {
       throw new NotFoundException('Mentee profile not found');
+    }
+
+    // Outcome pipeline: reject low-commitment mentees (score < 50)
+    const app = await this.prisma.cohortApplication.findUnique({
+      where: { cycleId_userId: { cycleId, userId: menteeId } },
+    });
+    const { score: commitmentScore } = await this.pipeline.calculateMenteeCommitmentScore(menteeId, app?.id);
+    if (commitmentScore < MENTEE_COMMITMENT_MIN) {
+      throw new BadRequestException(
+        `Commitment score too low (${commitmentScore.toFixed(0)}). Minimum ${MENTEE_COMMITMENT_MIN}. Complete your profile, add portfolio links, and availability to improve.`,
+      );
     }
 
     // Get all active mentors
@@ -660,7 +716,7 @@ export class MentorshipService {
       .filter((m) => m.matchScore >= minScore)
       .sort((a, b) => b.matchScore - a.matchScore);
 
-    // Create match records
+    // Create or get match records
     const matchRecords = await Promise.all(
       filteredMatches.map(async (match) => {
         const existing = await this.prisma.mentorshipMatch.findUnique({
@@ -668,20 +724,20 @@ export class MentorshipService {
             mentorId_menteeId_cycleId: {
               mentorId: match.mentor.userId,
               menteeId,
-              cycleId: cycleId || null,
+              cycleId,
             },
           },
         });
 
         if (existing) {
-          return existing;
+          return existing.id;
         }
 
-        return this.prisma.mentorshipMatch.create({
+        const created = await this.prisma.mentorshipMatch.create({
           data: {
             mentorId: match.mentor.userId,
             menteeId,
-            cycleId: cycleId || null,
+            cycleId,
             matchScore: match.matchScore,
             skillMatch: match.skillMatch,
             industryRelevance: match.industryRelevance,
@@ -690,25 +746,41 @@ export class MentorshipService {
             personalityFit: match.personalityFit,
             status: MatchStatus.PENDING,
           },
-          include: {
-            mentor: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                profileImage: true,
-                skills: true,
-                occupation: true,
-                bio: true,
-              },
-            },
-          },
         });
+        return created.id;
       }),
     );
 
-    return matchRecords;
+    // Return all matches with consistent include (mentor + mentee) for mobile/admin consistency
+    if (matchRecords.length === 0) return [];
+
+    return this.prisma.mentorshipMatch.findMany({
+      where: { id: { in: matchRecords } },
+      include: {
+        mentor: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profileImage: true,
+            skills: true,
+            occupation: true,
+            bio: true,
+          },
+        },
+        mentee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            profileImage: true,
+          },
+        },
+      },
+      orderBy: { matchScore: 'desc' },
+    });
   }
 
   async approveMatch(matchId: string, userId: string, isMentor: boolean) {
@@ -766,6 +838,10 @@ export class MentorshipService {
       throw new NotFoundException('Match not found');
     }
 
+    if (!match.cycleId) {
+      throw new BadRequestException('Match must belong to a cycle to create mentorship');
+    }
+
     const mentee = await this.prisma.menteeProfile.findUnique({
       where: { userId: match.menteeId },
     });
@@ -774,7 +850,7 @@ export class MentorshipService {
       data: {
         mentorId: match.mentorId,
         menteeId: match.menteeId,
-        cycleId: match.cycleId,
+        cycleId: match.cycleId, // REQUIRED: All mentorships must belong to a cycle
         matchId: match.id,
         status: MentorshipStatus.ACTIVE,
         goals: mentee?.careerGoals || '',
@@ -811,10 +887,8 @@ export class MentorshipService {
       },
     });
 
-    // Create program for the cycle
-    if (match.cycleId) {
-      await this.createProgram(mentorship.id, match.cycleId);
-    }
+    // Create program for the cycle (always required now)
+    await this.createProgram(mentorship.id, match.cycleId);
 
     // Send notifications
     await this.notificationsService.create(match.mentorId, {
@@ -911,14 +985,18 @@ export class MentorshipService {
       dueDate?: string;
     },
   ) {
-    // Verify the user is the mentor for this mentorship
+    // Verify the user is the mentor for this mentorship and get cycleId
     const mentorship = await this.prisma.mentorship.findUnique({
       where: { id: data.mentorshipId },
-      select: { mentorId: true, status: true },
+      select: { mentorId: true, status: true, cycleId: true },
     });
 
     if (!mentorship) {
       throw new NotFoundException('Mentorship not found');
+    }
+
+    if (!mentorship.cycleId) {
+      throw new BadRequestException('Mentorship must belong to a cycle');
     }
 
     if (mentorship.mentorId !== mentorUserId) {
@@ -932,6 +1010,7 @@ export class MentorshipService {
     const task = await this.prisma.mentorshipTask.create({
       data: {
         mentorshipId: data.mentorshipId,
+        cycleId: mentorship.cycleId, // REQUIRED: All tasks must belong to a cycle
         programId: data.programId,
         week: data.week,
         title: data.title,
@@ -1007,6 +1086,10 @@ export class MentorshipService {
       throw new NotFoundException('Mentorship not found');
     }
 
+    if (!mentorship.cycleId) {
+      throw new BadRequestException('Mentorship must belong to a cycle to generate tasks');
+    }
+
     // Generate AI-based tasks (simplified for now)
     const taskTemplates = [
       {
@@ -1031,6 +1114,7 @@ export class MentorshipService {
         this.prisma.mentorshipTask.create({
           data: {
             mentorshipId,
+            cycleId: mentorship.cycleId, // REQUIRED: All tasks must belong to a cycle
             programId,
             week,
             title: template.title,
@@ -1130,6 +1214,10 @@ export class MentorshipService {
         }),
       ]);
 
+      const progressScore = await this.pipeline.computeWeeklyProgressScore(
+        updated.mentorshipId,
+        updated.week,
+      );
       await this.prisma.mentorshipProgress.upsert({
         where: {
           mentorshipId_week: {
@@ -1143,12 +1231,19 @@ export class MentorshipService {
           week: updated.week,
           tasksCompleted: completedTasks,
           totalTasks,
+          progressScore,
         },
         update: {
           tasksCompleted: completedTasks,
           totalTasks,
           programId: updated.programId ?? undefined,
+          progressScore,
         },
+      });
+
+      await this.prisma.mentorship.update({
+        where: { id: updated.mentorshipId },
+        data: { lastActivityAt: new Date() },
       });
 
       // If a week is fully completed, advance the program week and generate next week's tasks.
@@ -1253,7 +1348,6 @@ export class MentorshipService {
       throw new BadRequestException('Online link is required for online sessions');
     }
 
-    // Create the session
     const session = await this.prisma.mentorshipSession.create({
       data: {
         mentorshipId,
@@ -1268,7 +1362,38 @@ export class MentorshipService {
       },
     });
 
-    // Notify the mentee
+    // Activation: first meeting within 72h → set firstMeetingScheduledAt and optionally activatedAt
+    const existingSessions = await this.prisma.mentorshipSession.count({
+      where: { mentorshipId },
+    });
+    if (existingSessions === 1 && !mentorship.firstMeetingScheduledAt) {
+      const startedAt = mentorship.startedAt || mentorship.createdAt;
+      const hoursToMeeting = (scheduledDate.getTime() - new Date(startedAt).getTime()) / (1000 * 60 * 60);
+      await this.prisma.mentorship.update({
+        where: { id: mentorshipId },
+        data: {
+          firstMeetingScheduledAt: scheduledDate,
+          ...(hoursToMeeting <= 72 && { activatedAt: new Date() }),
+          lastActivityAt: new Date(),
+        },
+      });
+      if (hoursToMeeting > 72) {
+        await this.prisma.mentorshipIntervention.create({
+          data: {
+            mentorshipId,
+            type: 'ACTIVATION_72H_FAILED',
+            notes: `First meeting scheduled ${hoursToMeeting.toFixed(0)}h after start (max 72h).`,
+            metadata: { hoursToMeeting, scheduledDate: scheduledDate.toISOString() },
+          },
+        });
+      }
+    } else {
+      await this.prisma.mentorship.update({
+        where: { id: mentorshipId },
+        data: { lastActivityAt: new Date() },
+      });
+    }
+
     await this.notificationsService.createAndSend(mentorship.menteeId, {
       title: 'New Session Scheduled',
       message: `${mentorship.mentor.firstName} ${mentorship.mentor.lastName} scheduled a session for ${scheduledDate.toLocaleDateString()}.`,
@@ -2271,13 +2396,26 @@ export class MentorshipService {
     return mentorship;
   }
 
-  async requestMentorship(menteeId: string, mentorId: string, goals?: string) {
+  async requestMentorship(menteeId: string, mentorId: string, cycleId: string, goals?: string) {
     if (menteeId === mentorId) {
       throw new ForbiddenException('Cannot request mentorship from yourself');
     }
 
+    if (!cycleId) {
+      throw new BadRequestException('cycleId is required. All mentorships must belong to a cycle.');
+    }
+
+    // Verify cycle exists
+    const cycle = await this.prisma.mentorshipCycle.findUnique({
+      where: { id: cycleId },
+    });
+
+    if (!cycle) {
+      throw new NotFoundException('Cycle not found');
+    }
+
     // Log for debugging
-    console.log('Requesting mentorship:', { menteeId, mentorId, goals });
+    console.log('Requesting mentorship:', { menteeId, mentorId, cycleId, goals });
 
     // Verify both users exist
     const [mentor, mentee] = await Promise.all([
@@ -2297,26 +2435,26 @@ export class MentorshipService {
       throw new NotFoundException('Mentee not found');
     }
 
-    // Check if mentorship already exists
+    // Check if mentorship already exists in this cycle
     const existing = await this.prisma.mentorship.findFirst({
       where: {
         mentorId,
         menteeId,
+        cycleId,
         status: { in: [MentorshipStatus.PENDING, MentorshipStatus.ACTIVE] },
       },
     });
 
     if (existing) {
-      throw new ForbiddenException('Mentorship request already exists');
+      throw new ForbiddenException('Mentorship request already exists for this cycle');
     }
 
-    const defaultCycleId = await this.getDefaultCycleId();
     const mentorship = await this.prisma.mentorship.create({
       data: {
         mentorId,
         menteeId,
+        cycleId, // REQUIRED: All mentorships must belong to a cycle
         goals,
-        cycleId: defaultCycleId,
         status: MentorshipStatus.PENDING,
       },
       include: {
@@ -2482,6 +2620,15 @@ export class MentorshipService {
       console.error('Certificate generation failed:', error);
     }
 
+    // NorthernBox: add graduate to cohort alumni when mentorship was part of a cycle
+    if (mentorship.cycleId) {
+      try {
+        await this.createAlumniOnCompletion(mentorship.cycleId, mentorship.menteeId, mentorshipId);
+      } catch (e) {
+        console.error('Alumni record creation failed:', e);
+      }
+    }
+
     // Check and award badges automatically for both mentor and mentee
     const userIdsToCheck = [mentorship.menteeId];
     if (mentorship.mentorId) {
@@ -2610,6 +2757,286 @@ export class MentorshipService {
         bio: true,
         skills: true,
         occupation: true,
+      },
+    });
+  }
+
+  // ==================== COHORT APPLICATIONS (Structured NorthernBox) ====================
+
+  async createOrUpdateCohortApplication(userId: string, cycleId: string, dto: CreateCohortApplicationDto) {
+    const cycle = await this.prisma.mentorshipCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new NotFoundException('Cycle not found');
+    if ((cycle as any).status !== 'UPCOMING' && (cycle as any).status !== 'ACTIVE') {
+      throw new BadRequestException('Applications are only open for UPCOMING or ACTIVE cycles');
+    }
+
+    return this.prisma.cohortApplication.upsert({
+      where: { cycleId_userId: { cycleId, userId } },
+      create: {
+        cycleId,
+        userId,
+        ...dto,
+        status: CohortApplicationStatus.DRAFT,
+      },
+      update: dto,
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, profileImage: true },
+        },
+      },
+    });
+  }
+
+  async submitCohortApplication(userId: string, cycleId: string) {
+    const app = await this.prisma.cohortApplication.findUnique({
+      where: { cycleId_userId: { cycleId, userId } },
+    });
+    if (!app) throw new NotFoundException('Application not found. Save a draft first.');
+    if (app.status !== CohortApplicationStatus.DRAFT) {
+      throw new BadRequestException('Application already submitted');
+    }
+    if (!app.shortBio || !app.whyJoin || !app.proofOfInterestType || !app.proofOfInterestValue || !app.availabilityCommitment) {
+      throw new BadRequestException('Complete all required fields: short bio, why join, proof of interest, availability commitment');
+    }
+
+    return this.prisma.cohortApplication.update({
+      where: { id: app.id },
+      data: { status: CohortApplicationStatus.SUBMITTED, submittedAt: new Date() },
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+    });
+  }
+
+  async getMyCohortApplication(userId: string, cycleId: string) {
+    return this.prisma.cohortApplication.findUnique({
+      where: { cycleId_userId: { cycleId, userId } },
+      include: {
+        cycle: { select: { id: true, name: true, status: true } },
+      },
+    });
+  }
+
+  async getCohortApplicationsByCycle(cycleId: string, status?: CohortApplicationStatus) {
+    const cycle = await this.prisma.mentorshipCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new NotFoundException('Cycle not found');
+
+    return this.prisma.cohortApplication.findMany({
+      where: { cycleId, ...(status ? { status } : {}) },
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, profileImage: true },
+        },
+      },
+      orderBy: { submittedAt: 'desc' },
+    });
+  }
+
+  async updateCohortApplication(applicationId: string, dto: UpdateCohortApplicationDto) {
+    return this.prisma.cohortApplication.update({
+      where: { id: applicationId },
+      data: dto,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        cycle: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  // ==================== ACCOUNTABILITY (Weekly attendance, 2-week rule) ====================
+
+  async recordWeekAttendance(mentorshipId: string, week: number, attended: boolean, excusedAbsence?: boolean) {
+    const mentorship = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      select: { id: true, cycleId: true },
+    });
+    if (!mentorship) throw new NotFoundException('Mentorship not found');
+
+    const progress = await this.prisma.mentorshipProgress.upsert({
+      where: { mentorshipId_week: { mentorshipId, week } },
+      create: {
+        mentorshipId,
+        week,
+        attended,
+        excusedAbsence: excusedAbsence ?? false,
+      },
+      update: {
+        attended,
+        excusedAbsence: excusedAbsence ?? false,
+      },
+    });
+
+    if (mentorship.cycleId) {
+      await this.checkConsecutiveAbsencesAndDrop(mentorship.cycleId);
+    }
+    return progress;
+  }
+
+  async checkConsecutiveAbsencesAndDrop(cycleId: string) {
+    const activeMentorships = await this.prisma.mentorship.findMany({
+      where: { cycleId, status: MentorshipStatus.ACTIVE },
+      select: { id: true },
+    });
+
+    for (const m of activeMentorships) {
+      const progressRecords = await this.prisma.mentorshipProgress.findMany({
+        where: { mentorshipId: m.id, attended: false, excusedAbsence: { not: true } },
+        select: { week: true },
+      });
+      const absentWeeks = new Set(progressRecords.map((r) => r.week));
+      let hasConsecutive = false;
+      for (const w of absentWeeks) {
+        if (absentWeeks.has(w + 1)) {
+          hasConsecutive = true;
+          break;
+        }
+      }
+      if (hasConsecutive) {
+        await this.prisma.mentorship.update({
+          where: { id: m.id },
+          data: { status: MentorshipStatus.DROPPED },
+        });
+      }
+    }
+  }
+
+  // ==================== GRADUATION & ALUMNI ====================
+
+  async createAlumniOnCompletion(cycleId: string, userId: string, mentorshipId: string) {
+    const existing = await this.prisma.cohortAlumni.findUnique({
+      where: { cycleId_userId: { cycleId, userId } },
+    });
+    if (existing) return existing;
+    return this.prisma.cohortAlumni.create({
+      data: {
+        cycleId,
+        userId,
+        mentorshipId,
+        joinedAlumniGroup: true,
+        canMentorFutureCohorts: false,
+        showcased: false,
+      },
+    });
+  }
+
+  async getAlumniByCycle(cycleId: string) {
+    const cycle = await this.prisma.mentorshipCycle.findUnique({ where: { id: cycleId } });
+    if (!cycle) throw new NotFoundException('Cycle not found');
+    return this.prisma.cohortAlumni.findMany({
+      where: { cycleId },
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, profileImage: true, occupation: true },
+        },
+      },
+      orderBy: { graduatedAt: 'desc' },
+    });
+  }
+
+  async getShowcasedAlumni() {
+    return this.prisma.cohortAlumni.findMany({
+      where: { showcased: true },
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, profileImage: true, occupation: true },
+        },
+        cycle: { select: { id: true, name: true } },
+      },
+      orderBy: { graduatedAt: 'desc' },
+      take: 50,
+    });
+  }
+
+  async updateAlumni(alumniId: string, data: { joinedAlumniGroup?: boolean; canMentorFutureCohorts?: boolean; showcased?: boolean }) {
+    return this.prisma.cohortAlumni.update({
+      where: { id: alumniId },
+      data,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true } },
+        cycle: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  // ==================== OUTCOME PIPELINE: SCORES & OUTCOMES ====================
+
+  async getMenteeCommitmentScore(menteeId: string, applicationId?: string) {
+    return this.pipeline.calculateMenteeCommitmentScore(menteeId, applicationId);
+  }
+
+  async getMentorScore(mentorId: string) {
+    return this.pipeline.calculateMentorScore(mentorId);
+  }
+
+  async createOutcome(
+    actorUserId: string,
+    data: {
+      menteeId: string;
+      mentorshipId?: string;
+      cycleId?: string;
+      outcomeType: string;
+      title?: string;
+      description?: string;
+      date?: string;
+    },
+  ) {
+    const mentorship = data.mentorshipId
+      ? await this.prisma.mentorship.findUnique({
+          where: { id: data.mentorshipId },
+          select: { mentorId: true, menteeId: true, cycleId: true },
+        })
+      : null;
+    if (data.mentorshipId && !mentorship) throw new NotFoundException('Mentorship not found');
+    const isMentor = mentorship && mentorship.mentorId === actorUserId;
+    const isMentee = mentorship && mentorship.menteeId === actorUserId;
+    if (!isMentor && !isMentee && data.menteeId !== actorUserId) {
+      throw new ForbiddenException('Only the mentee or their mentor can record outcomes for this mentee');
+    }
+    const cycleId = data.cycleId ?? mentorship?.cycleId ?? undefined;
+    return this.prisma.mentorshipOutcome.create({
+      data: {
+        menteeId: data.menteeId,
+        mentorshipId: data.mentorshipId ?? undefined,
+        cycleId: cycleId ?? undefined,
+        outcomeType: data.outcomeType,
+        title: data.title ?? undefined,
+        description: data.description ?? undefined,
+        date: data.date ? new Date(data.date) : undefined,
+        verified: false,
+      },
+      include: {
+        mentee: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+  }
+
+  async listOutcomes(filters: { menteeId?: string; mentorshipId?: string; cycleId?: string }) {
+    const where: any = {};
+    if (filters.menteeId) where.menteeId = filters.menteeId;
+    if (filters.mentorshipId) where.mentorshipId = filters.mentorshipId;
+    if (filters.cycleId) where.cycleId = filters.cycleId;
+    return this.prisma.mentorshipOutcome.findMany({
+      where,
+      orderBy: { date: 'desc' },
+      include: {
+        mentee: { select: { id: true, firstName: true, lastName: true } },
+        mentorship: { select: { id: true, cycleId: true } },
+      },
+    });
+  }
+
+  getOutcomeTypes(): readonly string[] {
+    return this.pipeline.getOutcomeTypes();
+  }
+
+  async verifyOutcome(outcomeId: string, verifiedBy: string) {
+    return this.prisma.mentorshipOutcome.update({
+      where: { id: outcomeId },
+      data: { verified: true, verifiedAt: new Date(), verifiedBy },
+      include: {
+        mentee: { select: { id: true, firstName: true, lastName: true } },
       },
     });
   }

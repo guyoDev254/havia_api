@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../common/services/email.service';
 import { SubmitDataCampApplicationDto } from './dto/submit-application.dto';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class DataCampApplicationsService {
@@ -13,10 +15,40 @@ export class DataCampApplicationsService {
   ) {}
 
   async submit(dto: SubmitDataCampApplicationDto) {
+    // Ensure applicants also exist in users table (using unique email)
+    const normalizedEmail = dto.email.trim().toLowerCase();
+    const fullName = dto.fullName?.trim() || '';
+    const [firstNameRaw, ...restNames] = fullName.split(' ').filter(Boolean);
+    const firstName = firstNameRaw || 'DataCamp';
+    const lastName = restNames.join(' ') || 'Applicant';
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true },
+    });
+
+    if (!existingUser) {
+      const tempPassword = crypto.randomBytes(16).toString('hex');
+      const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+      await this.prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          role: 'MEMBER',
+          isActive: true,
+          isEmailVerified: false,
+          isStudent: true,
+        },
+      });
+    }
+
     const application = await this.prisma.dataCampDonatesApplication.create({
       data: {
         fullName: dto.fullName,
-        email: dto.email,
+        email: normalizedEmail,
         dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
         cityOfResidence: dto.cityOfResidence,
         motivationForDataScience: dto.motivationForDataScience,
@@ -111,14 +143,14 @@ export class DataCampApplicationsService {
       `.trim();
       const text = `NorthernBox – Application Received\n\nHello ${name},\n\nThank you for applying for the DataCamp Donates scholarship through NorthernBox. We have received your application. Our team will review it and get back to you. If approved, you will receive instructions on how to access DataCamp.\n\nContact us: https://northernbox.co.ke/contact\n\nBest regards,\nThe NorthernBox Team`;
       await this.emailService.sendEmail(
-        dto.email,
+        normalizedEmail,
         'We received your DataCamp Donates scholarship application – NorthernBox',
         html,
         text,
       );
-      this.logger.log(`Confirmation email sent to ${dto.email} for application ${application.id}`);
+      this.logger.log(`Confirmation email sent to ${normalizedEmail} for application ${application.id}`);
     } catch (error) {
-      this.logger.error(`Failed to send confirmation email to ${dto.email}:`, error);
+      this.logger.error(`Failed to send confirmation email to ${normalizedEmail}:`, error);
       // Don't throw – application was saved; email failure shouldn't break the flow
     }
 

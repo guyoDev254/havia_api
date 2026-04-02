@@ -179,6 +179,35 @@ Complete mentorship
 - **Auth**: Required (mentor or mentee)
 - **Response**: Updated mentorship
 
+### NorthernBox structured cohort (cycles, applications, attendance, alumni)
+
+### GET `/mentorship/cycles/:id/phases` 🔒
+Get cohort phases (e.g. Foundation, Application, Professionalization)
+- **Response**: Array of `{ phaseOrder, name, startWeek, endWeek, description }`
+
+### GET `/mentorship/cycles/:id/apply` 🔒
+Get my cohort application for a cycle
+- **Response**: CohortApplication or null
+
+### POST `/mentorship/cycles/:id/apply` 🔒
+Create or update cohort application (draft)
+- **Body**: `shortBio`, `whyJoin`, `proofOfInterestType` (GITHUB|CV|SCHOOL|PROJECT_IDEA), `proofOfInterestValue`, `availabilityCommitment`, `technicalTaskUrl?`, `videoIntroUrl?`
+- **Response**: CohortApplication
+
+### POST `/mentorship/cycles/:id/apply/submit` 🔒
+Submit cohort application (required fields must be set)
+- **Response**: CohortApplication
+
+### PUT `/mentorship/progress/:mentorshipId/:week/attendance` 🔒
+Record weekly attendance (mentor or admin)
+- **Body**: `{ attended: boolean, excusedAbsence?: boolean }`
+- **Response**: MentorshipProgress (2 consecutive unexcused absences → mentorship status DROPPED)
+
+### GET `/mentorship/alumni` 🔒
+Get alumni (showcased) or by cycle
+- **Query Params**: `cycleId` (optional)
+- **Response**: Array of CohortAlumni
+
 ---
 
 ## 🏆 Badges (`/badges`)

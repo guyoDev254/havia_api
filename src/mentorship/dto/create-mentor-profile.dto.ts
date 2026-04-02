@@ -47,5 +47,9 @@ export class CreateMentorProfileDto {
   @IsBoolean()
   @IsOptional()
   commitmentAgreed?: boolean;
+
+  @IsString()
+  @IsOptional()
+  timezone?: string; // e.g. "Africa/Nairobi"
 }
 

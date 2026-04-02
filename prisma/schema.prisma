@@ -144,6 +144,31 @@ enum MentorshipStatus {
   COMPLETED
   CANCELLED
   PAUSED
+  DROPPED // Removed for 2+ consecutive unexcused absences (accountability)
+}
+
+// NorthernBox structured cohort: target group for each cohort
+enum CohortTargetGroup {
+  STUDENTS
+  JUNIOR_DEVELOPERS
+  NGO_STAFF
+  COMMUNITY_LEADERS
+  OTHER
+}
+
+enum CohortApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+enum ProofOfInterestType {
+  GITHUB
+  CV
+  SCHOOL
+  PROJECT_IDEA
 }
 
 enum MentorshipType {
@@ -303,6 +328,9 @@ model User {
   mentorMatches              MentorshipMatch[]           @relation("MentorMatches")
   menteeMatches              MentorshipMatch[]           @relation("MenteeMatches")
   mentorshipCycleInterests   MentorshipCycleInterest[]
+  cohortApplications        CohortApplication[]
+  cohortAlumni               CohortAlumni[]
+  outcomesAsMentee           MentorshipOutcome[]         @relation("MenteeOutcomes")
   following                  Follow[]                    @relation("UserFollowing")
   // Community Partners
   ownedPartners              CommunityPartner[]          @relation("PartnerOwners")
@@ -1219,7 +1247,7 @@ model MentorProfile {
   linkedIn           String?
   mentorshipThemes   MentorshipTheme[]
   mentorshipStyle    MentorshipStyle[]
-  weeklyAvailability Int? // hours per week
+  weeklyAvailability Int? // hours per week (availabilityHoursPerWeek)
   maxMentees         Int               @default(3)
   preferredType      MentorshipType    @default(ONE_ON_ONE)
   bio                String?           @db.Text
@@ -1229,6 +1257,9 @@ model MentorProfile {
   currentMentees     Int               @default(0)
   totalMentees       Int               @default(0)
   rating             Float?            @default(0)
+  // Outcome pipeline: mentor quality score 0–100 (experience + success history + availability + feedback)
+  mentorScore        Float?            // 0–100, calculated
+  timezone           String?           // e.g. "Africa/Nairobi"
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -1239,19 +1270,28 @@ model MentorProfile {
 }
 
 model MenteeProfile {
-  id                 String   @id @default(uuid())
-  userId             String   @unique
-  age                Int?
-  fieldOfInterest    String?
-  experienceLevel    String? // Beginner, Intermediate, Advanced
-  careerGoals        String?  @db.Text
-  challenges         String?  @db.Text
-  learningPreference String[] // video, chat, tasks
-  availability       Json? // { days: [], timeBlocks: [] }
-  commitmentAgreed   Boolean  @default(false)
-  isActive           Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  age                   Int?
+  fieldOfInterest       String?
+  experienceLevel       String?   // Beginner, Intermediate, Advanced
+  careerGoals           String?   @db.Text
+  challenges            String?   @db.Text
+  learningPreference    String[]  // video, chat, tasks (learningStyle)
+  availability          Json?     // { days: [], timeBlocks: [] }
+  commitmentAgreed      Boolean   @default(false)
+  isActive              Boolean   @default(true)
+  // Outcome pipeline: structured intake
+  goals                 String[]  @default([]) // e.g. ["Get internship", "Build project"]
+  skills                String[]  @default([]) // for skill-match (mentor.skills vs mentee.goals)
+  skillLevel            Int?      // 0–5
+  availabilityHoursPerWeek Int?   // hours per week
+  timezone              String?   // e.g. "Africa/Nairobi"
+  portfolioLinks        String[]  @default([]) // URLs
+  // Commitment score 0–100 (application + portfolio + assessment + availability). Reject < 50.
+  commitmentScore       Float?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1267,22 +1307,90 @@ model MentorshipCycle {
   benefits         String?  @db.Text
   expectedOutcomes String?  @db.Text
   requirements     String?  @db.Text
-  targetGroup      String?  @db.Text
+  targetGroup      String?  @db.Text // Legacy free text; prefer targetGroupEnum
+  targetGroupEnum  CohortTargetGroup?
   conditions       String?  @db.Text
   startDate        DateTime
   endDate          DateTime
   status           String   @default("UPCOMING") // UPCOMING, ACTIVE, COMPLETED
   maxMentorships   Int?
+  // NorthernBox structured cohort: 10–20 per cohort max
+  maxCohortSize    Int      @default(20)
+  totalWeeks       Int      @default(12) // e.g. 12-week program
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   // Relations
-  programs    MentorshipProgram[]
-  mentorships Mentorship[]              @relation("CycleMentorships")
-  matches     MentorshipMatch[]
-  interests   MentorshipCycleInterest[]
+  programs     MentorshipProgram[]
+  mentorships  Mentorship[]              @relation("CycleMentorships")
+  matches      MentorshipMatch[]
+  tasks        MentorshipTask[]
+  interests    MentorshipCycleInterest[]
+  applications CohortApplication[]
+  phases       CohortPhase[]
+  alumni       CohortAlumni[]
 
   @@map("mentorship_cycles")
+}
+
+model CohortApplication {
+  id                   String                 @id @default(uuid())
+  cycleId              String
+  userId               String
+  shortBio             String?                @db.Text
+  whyJoin              String?                @db.Text
+  proofOfInterestType  ProofOfInterestType?
+  proofOfInterestValue String?                @db.Text // URL or text
+  availabilityCommitment String?              @db.Text
+  technicalTaskUrl     String?                // Optional for advanced cohorts
+  videoIntroUrl        String?                // Optional 2–3 min video
+  status               CohortApplicationStatus @default(DRAFT)
+  screeningScore       Int?                   // Admin scoring
+  screeningNotes       String?                @db.Text
+  submittedAt          DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  cycle MentorshipCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cycleId, userId])
+  @@map("cohort_applications")
+}
+
+model CohortPhase {
+  id          String   @id @default(uuid())
+  cycleId     String
+  phaseOrder  Int      // 1=Foundation, 2=Application, 3=Professionalization
+  name        String
+  startWeek   Int
+  endWeek     Int
+  description String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cycle MentorshipCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@map("cohort_phases")
+}
+
+model CohortAlumni {
+  id                     String   @id @default(uuid())
+  cycleId                String
+  userId                 String
+  mentorshipId           String?
+  graduatedAt            DateTime @default(now())
+  joinedAlumniGroup      Boolean  @default(true)
+  canMentorFutureCohorts Boolean  @default(false)
+  showcased              Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  cycle      MentorshipCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cycleId, userId])
+  @@map("cohort_alumni")
 }
 
 model MentorshipCycleInterest {
@@ -1327,7 +1435,7 @@ model MentorshipMatch {
   id                 String      @id @default(uuid())
   mentorId           String
   menteeId           String
-  cycleId            String?
+  cycleId            String // REQUIRED: All matches must belong to a cycle
   matchScore         Float // 0-100
   skillMatch         Float // 0-40
   industryRelevance  Float // 0-20
@@ -1344,7 +1452,7 @@ model MentorshipMatch {
   // Relations
   mentor     User             @relation("MentorMatches", fields: [mentorId], references: [id])
   mentee     User             @relation("MenteeMatches", fields: [menteeId], references: [id])
-  cycle      MentorshipCycle? @relation(fields: [cycleId], references: [id])
+  cycle      MentorshipCycle  @relation(fields: [cycleId], references: [id])
   mentorship Mentorship?
 
   @@unique([mentorId, menteeId, cycleId])
@@ -1355,7 +1463,7 @@ model Mentorship {
   id                String           @id @default(uuid())
   mentorId          String
   menteeId          String
-  cycleId           String?
+  cycleId           String // REQUIRED: All mentorships must belong to a cycle
   matchId           String?          @unique
   status            MentorshipStatus @default(PENDING)
   type              MentorshipType   @default(ONE_ON_ONE)
@@ -1363,18 +1471,22 @@ model Mentorship {
   notes             String?          @db.Text
   nextSessionDate   DateTime?
   sessionsCompleted Int              @default(0)
-  engagementScore   Float? // 0-100
-  satisfactionScore Float? // 0-100
+  engagementScore   Float?           // 0-100
+  satisfactionScore Float?           // 0-100
   startedAt         DateTime?
   completedAt       DateTime?
   certificateId     String?          @unique
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  // Activation: first meeting within 72h → mark ACTIVE; else intervention
+  firstMeetingScheduledAt DateTime?   // When first session was scheduled
+  activatedAt       DateTime?        // When relationship was confirmed active (e.g. first meeting done/scheduled in time)
+  lastActivityAt   DateTime?        // For intervention: inactivity > 14d alert, > 30d reassign, > 45d terminate
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   // Relations
   mentor      User                   @relation("MentorSessions", fields: [mentorId], references: [id])
   mentee      User                   @relation("MenteeSessions", fields: [menteeId], references: [id])
-  cycle       MentorshipCycle?       @relation("CycleMentorships", fields: [cycleId], references: [id])
+  cycle       MentorshipCycle        @relation("CycleMentorships", fields: [cycleId], references: [id])
   match       MentorshipMatch?       @relation(fields: [matchId], references: [id])
   programs    MentorshipProgram[]
   tasks       MentorshipTask[]
@@ -1382,6 +1494,8 @@ model Mentorship {
   evaluations MentorshipEvaluation[]
   sessions    MentorshipSession[]
   certificate Certificate?
+  outcomes    MentorshipOutcome[]
+  interventions MentorshipIntervention[]
 
   @@unique([mentorId, menteeId, cycleId])
   @@map("mentorships")
@@ -1390,6 +1504,7 @@ model Mentorship {
 model MentorshipTask {
   id             String     @id @default(uuid())
   mentorshipId   String
+  cycleId        String // REQUIRED: All tasks must belong to a cycle (for direct cycle-level monitoring)
   programId      String?
   title          String
   description    String?    @db.Text
@@ -1405,6 +1520,7 @@ model MentorshipTask {
 
   // Relations
   mentorship Mentorship         @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+  cycle      MentorshipCycle    @relation(fields: [cycleId], references: [id])
   program    MentorshipProgram? @relation(fields: [programId], references: [id])
 
   @@map("mentorship_tasks")
@@ -1417,9 +1533,13 @@ model MentorshipProgress {
   week             Int
   tasksCompleted   Int      @default(0)
   totalTasks       Int      @default(0)
-  engagementScore  Float? // 0-100
-  skillImprovement Float? // 0-100
+  engagementScore  Float?   // 0-100
+  skillImprovement Float?   // 0-100
   notes            String?  @db.Text
+  attended         Boolean?
+  excusedAbsence   Boolean?
+  // Weekly progress score 0–100: meetings*20 + tasks*30 + skillImprovement*30 + mentorFeedback*20. If <40 for 2 consecutive weeks → intervention.
+  progressScore    Float?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -1492,6 +1612,51 @@ model Certificate {
   mentorship Mentorship @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
 
   @@map("certificates")
+}
+
+// Outcome tracking: got internship, built project, got job, learned skill, published portfolio, etc.
+model MentorshipOutcome {
+  id             String    @id @default(uuid())
+  menteeId       String
+  mentorshipId   String?
+  cycleId        String?
+  outcomeType    String    // e.g. GOT_INTERNSHIP, BUILT_PROJECT, GOT_JOB, LEARNED_SKILL, PUBLISHED_PORTFOLIO
+  title         String?   // Human-readable short label
+  description   String?   @db.Text
+  date          DateTime  @default(now())
+  verified      Boolean   @default(false)
+  verifiedAt    DateTime?
+  verifiedBy    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  mentee     User         @relation("MenteeOutcomes", fields: [menteeId], references: [id], onDelete: Cascade)
+  mentorship Mentorship?   @relation(fields: [mentorshipId], references: [id], onDelete: SetNull)
+
+  @@index([menteeId])
+  @@index([mentorshipId])
+  @@index([cycleId])
+  @@index([outcomeType])
+  @@map("mentorship_outcomes")
+}
+
+// Intervention log: inactivity alerts, reassignments, terminations, low progressScore triggers
+model MentorshipIntervention {
+  id           String    @id @default(uuid())
+  mentorshipId String
+  type         String    // INACTIVITY_14D_ALERT, INACTIVITY_30D_REASSIGN, INACTIVITY_45D_TERMINATE, LOW_PROGRESS_2WEEKS, ACTIVATION_72H_FAILED
+  triggeredAt  DateTime  @default(now())
+  resolvedAt   DateTime?
+  notes        String?   @db.Text
+  metadata     Json?     // e.g. { progressScore: 35, previousWeek: 32 }
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  mentorship Mentorship @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+
+  @@index([mentorshipId])
+  @@index([type])
+  @@map("mentorship_interventions")
 }
 
 model Badge {

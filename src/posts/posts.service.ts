@@ -219,7 +219,12 @@ export class PostsService {
         reactions: userId
           ? {
               where: { userId },
-              select: { type: true },
+              select: { 
+                id: true,
+                userId: true,
+                type: true,
+                createdAt: true,
+              },
             }
           : false,
       },
@@ -292,7 +297,12 @@ export class PostsService {
             reactions: userId
               ? {
                   where: { userId },
-                  select: { type: true },
+                  select: { 
+                    id: true,
+                    userId: true,
+                    type: true,
+                    createdAt: true,
+                  },
                 }
               : false,
           },
@@ -317,7 +327,12 @@ export class PostsService {
             reactions: userId
               ? {
                   where: { userId },
-                  select: { userId: true, type: true },
+                  select: { 
+                    id: true,
+                    userId: true,
+                    type: true,
+                    createdAt: true,
+                  },
                 }
               : false,
           },
@@ -332,7 +347,12 @@ export class PostsService {
         reactions: userId
           ? {
               where: { userId },
-              select: { type: true },
+              select: { 
+                id: true,
+                userId: true,
+                type: true,
+                createdAt: true,
+              },
             }
           : false,
       },
@@ -548,7 +568,12 @@ export class PostsService {
         reactions: userId
           ? {
               where: { userId },
-              select: { userId: true, type: true },
+              select: { 
+                id: true,
+                userId: true,
+                type: true,
+                createdAt: true,
+              },
             }
           : false,
       },

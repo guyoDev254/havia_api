@@ -6,6 +6,10 @@ export class RequestMentorshipDto {
   @IsString()
   mentorId: string;
 
+  @ApiProperty({ description: 'Cycle ID - All mentorships must belong to a cycle' })
+  @IsString()
+  cycleId: string;
+
   @ApiPropertyOptional({ description: 'Mentorship goals' })
   @IsOptional()
   @IsString()

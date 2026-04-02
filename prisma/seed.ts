@@ -59,9 +59,11 @@ async function main() {
   await prisma.mentorshipTask.deleteMany();
   await prisma.mentorshipProgram.deleteMany();
   await prisma.certificate.deleteMany();
+  await prisma.mentorshipIntervention.deleteMany();
+  await prisma.mentorshipOutcome.deleteMany();
   await prisma.mentorshipMatch.deleteMany();
-  await prisma.mentorshipCycle.deleteMany();
   await prisma.mentorship.deleteMany();
+  await prisma.mentorshipCycle.deleteMany();
   await prisma.menteeProfile.deleteMany();
   await prisma.mentorProfile.deleteMany();
   await prisma.badge.deleteMany();
@@ -2880,6 +2882,14 @@ async function main() {
         points: 200,
       },
     }),
+    prisma.badge.create({
+      data: {
+        name: 'New Member',
+        description: 'Joined NorthernBox. Welcome to the community!',
+        type: 'PARTICIPATION',
+        points: 5,
+      },
+    }),
   ]);
 
   // Assign badges to users
@@ -2913,7 +2923,7 @@ async function main() {
   // ==================== Mentorship Program Seed (cycles + matches + programs + tasks + progress + evaluations) ====================
   console.log('🤝 Creating mentorship program data...');
 
-  // Mentor profiles (so mobile/admin mentorship screens have mentor data)
+  // Mentor profiles (outcome pipeline: mentorScore, timezone)
   await prisma.mentorProfile.createMany({
     data: [
       {
@@ -2929,6 +2939,8 @@ async function main() {
         isVerified: true,
         isActive: true,
         rating: 4.7,
+        mentorScore: 78,
+        timezone: 'Africa/Nairobi',
       },
       {
         userId: users[4].id,
@@ -2943,6 +2955,8 @@ async function main() {
         isVerified: true,
         isActive: true,
         rating: 4.9,
+        mentorScore: 85,
+        timezone: 'Africa/Nairobi',
       },
       {
         userId: users[1].id,
@@ -2957,8 +2971,9 @@ async function main() {
         isVerified: true,
         isActive: true,
         rating: 4.5,
+        mentorScore: 72,
+        timezone: 'Africa/Nairobi',
       },
-      // Mobile Tester as Mentor
       {
         userId: mobileTester.id,
         bio: 'Experienced mobile developer mentoring students in React Native and mobile app development',
@@ -2972,12 +2987,14 @@ async function main() {
         isVerified: true,
         isActive: true,
         rating: 4.8,
+        mentorScore: 80,
+        timezone: 'Africa/Nairobi',
       },
     ],
     skipDuplicates: true,
   });
 
-  // Mentee profiles (used for matching)
+  // Mentee profiles (outcome pipeline: goals, skills, skillLevel, availabilityHoursPerWeek, timezone, portfolioLinks, commitmentScore)
   await prisma.menteeProfile.createMany({
     data: [
       {
@@ -2990,6 +3007,13 @@ async function main() {
         availability: { days: ['Mon', 'Wed'], timeBlocks: ['18:00-20:00'] } as any,
         commitmentAgreed: true,
         isActive: true,
+        goals: ['Get internship', 'Build portfolio website', 'Learn React'],
+        skills: ['HTML', 'CSS', 'JavaScript'],
+        skillLevel: 2,
+        availabilityHoursPerWeek: 8,
+        timezone: 'Africa/Nairobi',
+        portfolioLinks: ['https://github.com/amina-dev', 'https://amina-dev.github.io'],
+        commitmentScore: 68,
       } as any,
       {
         userId: users[2].id,
@@ -3001,6 +3025,13 @@ async function main() {
         availability: { days: ['Tue', 'Thu'], timeBlocks: ['17:00-19:00'] } as any,
         commitmentAgreed: true,
         isActive: true,
+        goals: ['Ship first app', 'Learn React Native', 'Get job'],
+        skills: ['JavaScript', 'React', 'React Native'],
+        skillLevel: 3,
+        availabilityHoursPerWeek: 6,
+        timezone: 'Africa/Nairobi',
+        portfolioLinks: ['https://github.com/ahmed-mobile'],
+        commitmentScore: 72,
       } as any,
       {
         userId: users[3].id,
@@ -3012,8 +3043,14 @@ async function main() {
         availability: { days: ['Sat'], timeBlocks: ['10:00-12:00'] } as any,
         commitmentAgreed: true,
         isActive: true,
+        goals: ['Raise first round', 'Build sustainable initiative'],
+        skills: ['Communication', 'Strategy'],
+        skillLevel: 1,
+        availabilityHoursPerWeek: 4,
+        timezone: 'Africa/Nairobi',
+        portfolioLinks: [],
+        commitmentScore: 55,
       } as any,
-      // Mobile Tester as Mentee
       {
         userId: mobileTester.id,
         fieldOfInterest: 'Mobile Development & Leadership',
@@ -3024,6 +3061,13 @@ async function main() {
         availability: { days: ['Mon', 'Wed', 'Fri'], timeBlocks: ['18:00-20:00'] } as any,
         commitmentAgreed: true,
         isActive: true,
+        goals: ['Tech lead role', 'Ship 3 apps', 'Mentor others'],
+        skills: ['React Native', 'TypeScript', 'Architecture'],
+        skillLevel: 4,
+        availabilityHoursPerWeek: 10,
+        timezone: 'Africa/Nairobi',
+        portfolioLinks: ['https://github.com/tester', 'https://tester.dev'],
+        commitmentScore: 82,
       } as any,
     ],
     skipDuplicates: true,
@@ -3117,7 +3161,7 @@ async function main() {
     }),
   ]);
 
-  // Mentorships linked to cycle + match
+  // Mentorships linked to cycle + match (outcome pipeline: firstMeetingScheduledAt, activatedAt, lastActivityAt)
   const ibrahimAminaMentorship = await prisma.mentorship.create({
     data: {
       mentorId: users[4].id,
@@ -3129,6 +3173,9 @@ async function main() {
       sessionsCompleted: 3,
       nextSessionDate: new Date(nextWeek.getTime() + 3 * 24 * 60 * 60 * 1000),
       startedAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000),
+      firstMeetingScheduledAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000),
+      activatedAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000),
+      lastActivityAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -3143,6 +3190,9 @@ async function main() {
       sessionsCompleted: 2,
       nextSessionDate: new Date(nextWeek.getTime() + 5 * 24 * 60 * 60 * 1000),
       startedAt: new Date(now.getTime() - 9 * 24 * 60 * 60 * 1000),
+      firstMeetingScheduledAt: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000),
+      activatedAt: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000),
+      lastActivityAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -3172,6 +3222,7 @@ async function main() {
     data: [
       {
         mentorshipId: ibrahimAminaMentorship.id,
+        cycleId: cycle.id,
         programId: programA.id,
         title: 'Build a simple portfolio homepage',
         description: 'Create a responsive page with About, Projects, and Contact sections.',
@@ -3183,6 +3234,7 @@ async function main() {
       },
       {
         mentorshipId: ibrahimAminaMentorship.id,
+        cycleId: cycle.id,
         programId: programA.id,
         title: 'Learn Git basics',
         description: 'Commit your changes and push to GitHub.',
@@ -3192,6 +3244,7 @@ async function main() {
       },
       {
         mentorshipId: guyoAhmedMentorship.id,
+        cycleId: cycle.id,
         programId: programB.id,
         title: 'Set up React Native navigation',
         description: 'Add stack + tabs with auth guard.',
@@ -3202,6 +3255,7 @@ async function main() {
       },
       {
         mentorshipId: guyoAhmedMentorship.id,
+        cycleId: cycle.id,
         programId: programB.id,
         title: 'Integrate API client + error handling',
         description: 'Add interceptors and better error messages for network changes.',
@@ -3213,13 +3267,13 @@ async function main() {
     ],
   });
 
-  // Progress snapshots
+  // Progress snapshots (outcome pipeline: progressScore 0–100)
   await prisma.mentorshipProgress.createMany({
     data: [
-      { mentorshipId: ibrahimAminaMentorship.id, programId: programA.id, week: 1, tasksCompleted: 1, totalTasks: 2, engagementScore: 78, skillImprovement: 65, notes: 'Good momentum.' },
-      { mentorshipId: ibrahimAminaMentorship.id, programId: programA.id, week: 2, tasksCompleted: 0, totalTasks: 2, engagementScore: 60, skillImprovement: 55, notes: 'Needs consistency.' },
-      { mentorshipId: guyoAhmedMentorship.id, programId: programB.id, week: 1, tasksCompleted: 1, totalTasks: 1, engagementScore: 82, skillImprovement: 70, notes: 'Strong progress.' },
-      { mentorshipId: guyoAhmedMentorship.id, programId: programB.id, week: 2, tasksCompleted: 0, totalTasks: 1, engagementScore: 58, skillImprovement: 50, notes: 'Blocked on API.' },
+      { mentorshipId: ibrahimAminaMentorship.id, programId: programA.id, week: 1, tasksCompleted: 1, totalTasks: 2, engagementScore: 78, skillImprovement: 65, notes: 'Good momentum.', progressScore: 62 },
+      { mentorshipId: ibrahimAminaMentorship.id, programId: programA.id, week: 2, tasksCompleted: 0, totalTasks: 2, engagementScore: 60, skillImprovement: 55, notes: 'Needs consistency.', progressScore: 38 },
+      { mentorshipId: guyoAhmedMentorship.id, programId: programB.id, week: 1, tasksCompleted: 1, totalTasks: 1, engagementScore: 82, skillImprovement: 70, notes: 'Strong progress.', progressScore: 75 },
+      { mentorshipId: guyoAhmedMentorship.id, programId: programB.id, week: 2, tasksCompleted: 0, totalTasks: 1, engagementScore: 58, skillImprovement: 50, notes: 'Blocked on API.', progressScore: 42 },
     ],
     skipDuplicates: true,
   });
@@ -3320,8 +3374,8 @@ async function main() {
 
   const completedMentorship = await prisma.mentorship.create({
     data: {
-      mentorId: users[4].id, // Ibrahim
-      menteeId: users[5].id, // Amina
+      mentorId: users[4].id,
+      menteeId: users[5].id,
       cycleId: completedCycle.id,
       matchId: completedMatch.id,
       status: 'COMPLETED',
@@ -3331,6 +3385,9 @@ async function main() {
       satisfactionScore: 92,
       startedAt: new Date(now.getTime() - 110 * 24 * 60 * 60 * 1000),
       completedAt: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000),
+      firstMeetingScheduledAt: new Date(now.getTime() - 109 * 24 * 60 * 60 * 1000),
+      activatedAt: new Date(now.getTime() - 109 * 24 * 60 * 60 * 1000),
+      lastActivityAt: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000),
     },
   });
 
@@ -3353,6 +3410,7 @@ async function main() {
       await prisma.mentorshipTask.create({
         data: {
           mentorshipId: completedMentorship.id,
+          cycleId: completedCycle.id,
           programId: completedProgram.id,
           title: `Week ${week} Task ${taskIdx}`,
           description: `Task ${taskIdx} description for week ${week} of the mentorship program.`,
@@ -3365,7 +3423,7 @@ async function main() {
       });
     }
 
-    // Create progress for each week
+    // Create progress for each week (with progressScore)
     await prisma.mentorshipProgress.create({
       data: {
         mentorshipId: completedMentorship.id,
@@ -3373,9 +3431,10 @@ async function main() {
         week: week,
         tasksCompleted: taskCount,
         totalTasks: taskCount,
-        engagementScore: 75 + week * 1.5, // Increasing engagement
-        skillImprovement: 60 + week * 3, // Increasing skills
+        engagementScore: 75 + week * 1.5,
+        skillImprovement: 60 + week * 3,
         notes: `Week ${week} completed successfully with all tasks done.`,
+        progressScore: 70 + week * 2.5, // 72–90 range
       },
     });
   }
@@ -3480,6 +3539,62 @@ async function main() {
     where: { id: completedMentorship.id },
     data: { certificateId: completedCertificate.id },
   });
+
+  // Outcome pipeline: mentorship outcomes (got internship, built project, etc.)
+  await prisma.mentorshipOutcome.createMany({
+    data: [
+      {
+        menteeId: users[5].id, // Amina
+        mentorshipId: completedMentorship.id,
+        cycleId: completedCycle.id,
+        outcomeType: 'BUILT_PROJECT',
+        title: 'Portfolio website live',
+        description: 'Completed responsive portfolio with About, Projects, Contact. Deployed to GitHub Pages.',
+        date: new Date(now.getTime() - 65 * 24 * 60 * 60 * 1000),
+        verified: true,
+        verifiedAt: new Date(now.getTime() - 62 * 24 * 60 * 60 * 1000),
+        verifiedBy: users[4].id,
+      },
+      {
+        menteeId: users[5].id,
+        mentorshipId: completedMentorship.id,
+        cycleId: completedCycle.id,
+        outcomeType: 'LEARNED_SKILL',
+        title: 'Git and GitHub workflow',
+        description: 'Comfortable with commits, branches, PRs, and basic collaboration.',
+        date: new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000),
+        verified: true,
+        verifiedAt: new Date(now.getTime() - 68 * 24 * 60 * 60 * 1000),
+        verifiedBy: users[4].id,
+      },
+      {
+        menteeId: users[2].id, // Ahmed (active mentorship)
+        mentorshipId: guyoAhmedMentorship.id,
+        cycleId: cycle.id,
+        outcomeType: 'LEARNED_SKILL',
+        title: 'React Native navigation',
+        description: 'Set up stack and tab navigation with auth guard.',
+        date: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
+        verified: false,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // One intervention example (PENDING mentorship: no first meeting in 72h)
+  const pendingMentorship = await prisma.mentorship.findFirst({
+    where: { status: 'PENDING', cycleId: cycle.id },
+  });
+  if (pendingMentorship) {
+    await prisma.mentorshipIntervention.create({
+      data: {
+        mentorshipId: pendingMentorship.id,
+        type: 'ACTIVATION_72H_FAILED',
+        notes: 'First meeting not scheduled within 72h of match. Reminder sent.',
+        metadata: { hoursToMeeting: 96 },
+      },
+    });
+  }
 
   // Skip creating duplicate mentorship - existing mentorships already provide good coverage:
   // - ibrahimAminaMentorship (ACTIVE) with sessions
@@ -3868,7 +3983,7 @@ async function main() {
 
   // Create Activities
   console.log('📝 Creating activities...');
-  const activities = await Promise.all([
+  const activityCreates = [
     // Event-related activities
     prisma.activity.create({
       data: {
@@ -4174,7 +4289,11 @@ async function main() {
         createdAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
       },
     }),
-  ]);
+  ];
+
+  for (const createActivity of activityCreates) {
+    await createActivity;
+  }
 
   // Create Notifications
   console.log('🔔 Creating notifications...');

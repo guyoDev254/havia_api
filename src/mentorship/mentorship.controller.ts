@@ -7,6 +7,7 @@ import {
   Param,
   UseGuards,
   Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { MentorshipService } from './mentorship.service';
@@ -19,6 +20,7 @@ import { CreateMenteeProfileDto } from './dto/create-mentee-profile.dto';
 import { CreateCycleDto } from './dto/create-cycle.dto';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
+import { CreateCohortApplicationDto } from './dto/create-cohort-application.dto';
 import { TaskStatus, EvaluationType } from '@prisma/client';
 
 @ApiTags('mentorship')
@@ -118,17 +120,79 @@ export class MentorshipController {
     return this.mentorshipService.getMyCycleInterest(user.id, cycleId);
   }
 
+  @Get('cycles/:id/phases')
+  @ApiOperation({ summary: 'Get cohort phases (e.g. Foundation, Application, Professionalization)' })
+  async getCyclePhases(@Param('id') cycleId: string) {
+    return this.mentorshipService.getCyclePhases(cycleId);
+  }
+
+  // ==================== COHORT APPLICATION (Structured NorthernBox) ====================
+
+  @Get('cycles/:id/apply')
+  @ApiOperation({ summary: 'Get my cohort application for a cycle' })
+  async getMyCohortApplication(@CurrentUser() user: any, @Param('id') cycleId: string) {
+    return this.mentorshipService.getMyCohortApplication(user.id, cycleId);
+  }
+
+  @Post('cycles/:id/apply')
+  @ApiOperation({ summary: 'Create or update cohort application (draft)' })
+  async createOrUpdateCohortApplication(
+    @CurrentUser() user: any,
+    @Param('id') cycleId: string,
+    @Body() dto: CreateCohortApplicationDto,
+  ) {
+    return this.mentorshipService.createOrUpdateCohortApplication(user.id, cycleId, dto);
+  }
+
+  @Post('cycles/:id/apply/submit')
+  @ApiOperation({ summary: 'Submit cohort application' })
+  async submitCohortApplication(@CurrentUser() user: any, @Param('id') cycleId: string) {
+    return this.mentorshipService.submitCohortApplication(user.id, cycleId);
+  }
+
+  // ==================== ACCOUNTABILITY (Weekly attendance) ====================
+
+  @Put('progress/:mentorshipId/:week/attendance')
+  @ApiOperation({ summary: 'Record weekly attendance (mentor or admin)' })
+  async recordWeekAttendance(
+    @Param('mentorshipId') mentorshipId: string,
+    @Param('week') week: string,
+    @Body() body: { attended: boolean; excusedAbsence?: boolean },
+  ) {
+    return this.mentorshipService.recordWeekAttendance(
+      mentorshipId,
+      parseInt(week, 10),
+      body.attended,
+      body.excusedAbsence,
+    );
+  }
+
+  // ==================== ALUMNI ====================
+
+  @Get('alumni')
+  @ApiOperation({ summary: 'Get alumni (by cycle or showcased)' })
+  @ApiQuery({ name: 'cycleId', required: false })
+  async getAlumni(@Query('cycleId') cycleId?: string) {
+    if (cycleId) {
+      return this.mentorshipService.getAlumniByCycle(cycleId);
+    }
+    return this.mentorshipService.getShowcasedAlumni();
+  }
+
   // ==================== MATCHING ====================
 
   @Get('matches')
   @ApiOperation({ summary: 'Find mentorship matches for current user' })
-  @ApiQuery({ name: 'cycleId', required: false })
+  @ApiQuery({ name: 'cycleId', required: true, description: 'Cycle ID is required' })
   @ApiQuery({ name: 'minScore', required: false, type: Number })
   async findMatches(
     @CurrentUser() user: any,
-    @Query('cycleId') cycleId?: string,
+    @Query('cycleId') cycleId: string,
     @Query('minScore') minScore?: string,
   ) {
+    if (!cycleId) {
+      throw new BadRequestException('cycleId is required. All matches must belong to a cycle.');
+    }
     return this.mentorshipService.findMatches(
       user.id,
       cycleId,
@@ -348,6 +412,61 @@ export class MentorshipController {
     return this.mentorshipService.generateCertificate(mentorshipId);
   }
 
+  // ==================== OUTCOME PIPELINE (scores & outcomes) ====================
+
+  @Get('pipeline/commitment-score')
+  @ApiOperation({ summary: 'Get current user mentee commitment score (0–100)' })
+  @ApiQuery({ name: 'applicationId', required: false })
+  async getCommitmentScore(
+    @CurrentUser() user: any,
+    @Query('applicationId') applicationId?: string,
+  ) {
+    return this.mentorshipService.getMenteeCommitmentScore(user.id, applicationId);
+  }
+
+  @Get('pipeline/mentor-score')
+  @ApiOperation({ summary: 'Get current user mentor quality score (0–100)' })
+  async getMentorScore(@CurrentUser() user: any) {
+    return this.mentorshipService.getMentorScore(user.id);
+  }
+
+  @Get('outcomes/types')
+  @ApiOperation({ summary: 'List outcome types for recording (e.g. GOT_INTERNSHIP, BUILT_PROJECT)' })
+  async getOutcomeTypes() {
+    return this.mentorshipService.getOutcomeTypes();
+  }
+
+  @Get('outcomes')
+  @ApiOperation({ summary: 'List outcomes (filter by menteeId, mentorshipId, cycleId)' })
+  @ApiQuery({ name: 'menteeId', required: false })
+  @ApiQuery({ name: 'mentorshipId', required: false })
+  @ApiQuery({ name: 'cycleId', required: false })
+  async listOutcomes(
+    @Query('menteeId') menteeId?: string,
+    @Query('mentorshipId') mentorshipId?: string,
+    @Query('cycleId') cycleId?: string,
+  ) {
+    return this.mentorshipService.listOutcomes({ menteeId, mentorshipId, cycleId });
+  }
+
+  @Post('outcomes')
+  @ApiOperation({ summary: 'Record an outcome for a mentee (mentee or mentor)' })
+  async createOutcome(
+    @CurrentUser() user: any,
+    @Body()
+    body: {
+      menteeId: string;
+      mentorshipId?: string;
+      cycleId?: string;
+      outcomeType: string;
+      title?: string;
+      description?: string;
+      date?: string;
+    },
+  ) {
+    return this.mentorshipService.createOutcome(user.id, body);
+  }
+
   // ==================== LEGACY ENDPOINTS ====================
 
   @Get('mentors')
@@ -378,7 +497,7 @@ export class MentorshipController {
     @CurrentUser() user: any,
     @Body() dto: RequestMentorshipDto,
   ) {
-    return this.mentorshipService.requestMentorship(user.id, dto.mentorId, dto.goals);
+    return this.mentorshipService.requestMentorship(user.id, dto.mentorId, dto.cycleId, dto.goals);
   }
 
   @Post('apply')

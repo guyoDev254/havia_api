@@ -15,18 +15,19 @@ export class BadgesController {
     return this.badgesService.findAll(type as any);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get badge by ID' })
-  async findOne(@Param('id') id: string) {
-    return this.badgesService.findOne(id);
-  }
-
-  @Get('user')
+  /** Must be before @Get(':id') so /badges/me is not matched as badge id "me" */
+  @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user badges' })
   async getUserBadges(@CurrentUser() user: any) {
     return this.badgesService.getUserBadges(user.id);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get badge by ID' })
+  async findOne(@Param('id') id: string) {
+    return this.badgesService.findOne(id);
   }
 
   @Post(':id/award')
